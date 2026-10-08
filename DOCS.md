@@ -3,6 +3,20 @@
 Working notes, one batch of work at a time (newest first). Each batch has its plan, what was done
 for each step, and a log of every mistake made along the way (what went wrong, and how it was fixed).
 
+# Batch 10 (8 Oct): the dev cheat's anti-aim works again
+
+- **The bug.**
+  - In the dev cheat (mega?dev, the L key), Rage > Spin bot and Fake pitch did nothing.
+  - An outside PR (mazocracks-pixel, d57df7b, 5 Oct) made the dev cheat's input changes run **only in HvH**. The same day, your rule made the dev cheat **off in HvH**. Together they could never run anywhere.
+- **The fix.** One line in [client/src/dev/classic/DevRuntime.ts](client/src/dev/classic/DevRuntime.ts) (`modifyFrame`): the HvH-only check is gone. The dev cheat's own on-switch already keeps it off in HvH and ranked FaceChiken (the server decides that), so nothing else changes.
+- **Same cause, also back.** The dev cheat's other input options were blocked by the same line: jump assist, auto strafe, movement assist, and keeping your chicken still during free cam and spectate. Only anti-aim was tested.
+- **Checked live.** Two players in a private Team Fight; one turned on the dev cheat with the passkey.
+  - The other player saw the body spin, fake pitch Down (-1.2) and Up (1.05), and jitter around backwards.
+  - Turned off, everything went back to normal.
+  - Walking while spinning went exactly where the camera faces.
+- **Test.** [client/test/classic-antiaim.test.ts](client/test/classic-antiaim.test.ts) fails without the fix and passes with it. Typecheck, all 419 tests and the build pass.
+- **Mistake.** My first live test showed sideways drift while walking. It was the match-start respawn resetting the camera mid-test, not a bug; the test now waits for the match to start.
+
 # Batch 9 (7 Oct): pitch anti-aim fix
 
 - **The bug.** In the **Skeet** panel, Pitch (Look / Down / Up / Zero) did nothing once **Use state builder** was off: your head always followed your real look. The setting is stored with the state builder, and the server only read it while the builder was on. Skeet has no separate fallback pitch, so nothing applied.

@@ -159,7 +159,9 @@ export class DevRuntime implements DevHooks {
   }
 
   modifyFrame(session: GameSession, frame: InputFrame): InputFrame {
-    if (session.mode.id !== 'hvh' || !this.active) return frame;
+    // `active` is already off in HvH and ranked (the server decides); an extra HvH-only check here
+    // left anti-aim and the movement helpers dead everywhere.
+    if (!this.active) return frame;
     const c = this.dev.config;
     const s = session.local.state;
 
