@@ -17,6 +17,8 @@ export interface MenuActions {
   account(): void;
   settings(): void;
   privacy(): void;
+  /** The how-to-play guide (also F1). */
+  guide(): void;
   /** Today's challenges, for the card on the title screen. */
   dailyStatus(): Promise<DailyStatus>;
   /** How many people are playing right now. */
@@ -40,7 +42,6 @@ const WHATS_NEW: readonly { title: string; text: string }[] = [
   { title: 'Zombie Apocalypse', text: 'Co-op waves with bosses and a shop between rounds.' },
 ];
 
-const CONTROLS = 'WASD move · Shift slow walk · Space jump (hold Space to bunny hop, or tap it right as you land) · A/D + mouse turn: air strafe · Mouse aim · Click shoot · Right-click aim / scope · R reload · 1-4 guns · 5 melee · F inspect · Ctrl/C crouch · G egg · Q smoke · Z flashbang · V first/third person · Tab scores · Y chat · U team chat · M switch team · B buy menu';
 
 const TAB_KEY = 'chikengun:menu-tab';
 const BOTS_KEY = 'chikengun:menu-no-bots';
@@ -93,7 +94,6 @@ export class MainMenu {
   private readonly playMode = h('span', { class: 'lobby-play-mode' });
   private readonly playButton: HTMLButtonElement;
   private readonly modePanel: HTMLElement;
-  private readonly controlsCard = h('div', { class: 'lobby-controls', hidden: true }, h('b', null, 'Controls'), h('p', null, CONTROLS));
   private readonly online = h('span', { class: 'lobby-online' }, h('i'), 'Connecting…');
   private readonly daily = h('div', { class: 'lobby-card lobby-daily' });
   private onlineTimer = 0;
@@ -188,7 +188,7 @@ export class MainMenu {
     const friends = navButton('team', 'Friends', actions.friends);
     friends.append(this.friendsBadge);
     const news = h('div', { class: 'lobby-card lobby-news' }, h('h3', null, "What's new"), ...WHATS_NEW.map((n) => h('div', { class: 'lobby-news-item' }, h('b', null, n.title), h('span', null, n.text))));
-    const controls = withIcon(button('', () => (this.controlsCard.hidden = !this.controlsCard.hidden), 'lobby-link'), 'help', 'Controls');
+    const controls = withIcon(button('', actions.guide, 'lobby-link'), 'help', 'How to play · F1');
 
     this.root = h(
       'div',
@@ -224,7 +224,6 @@ export class MainMenu {
         controls,
         h('button', { type: 'button', class: 'link', onclick: actions.privacy }, 'Cookies & privacy'),
       ),
-      this.controlsCard,
       h('button', { type: 'button', class: 'scene-toggle', title: 'Hide the menu to see the scene', 'aria-label': 'Hide or show the menu', onclick: () => this.root.classList.toggle('scene-only') }, icon('hide')),
       this.modePanel,
     );

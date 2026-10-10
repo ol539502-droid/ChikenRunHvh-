@@ -5859,3 +5859,72 @@ code {
 #hud-layer .tr-status.bad {
   color: var(--barn);
 }
+
+/* ---------------------------------------------------------------- How to play (F1) */
+:where(#modal-layer) .guide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px 22px;
+}
+:where(#modal-layer) .guide-section h3 {
+  margin: 0 0 6px;
+  color: var(--barn);
+}
+:where(#modal-layer) .guide-section:first-child,
+:where(#modal-layer) .guide-section:nth-last-child(2) {
+  grid-column: 1 / -1;
+}
+:where(#modal-layer) .guide ol,
+:where(#modal-layer) .guide ul {
+  margin: 0;
+  padding-left: 1.2em;
+  line-height: 1.55;
+}
+:where(#modal-layer) .guide-key {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(43, 26, 16, 0.18);
+  font-size: 0.9rem;
+}
+:where(#modal-layer) .guide-caps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+:where(#modal-layer) .guide-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+:where(#modal-layer) .guide-mode {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.82rem;
+}
+:where(#modal-layer) .guide-mode b {
+  display: block;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 1rem;
+}
+:where(#modal-layer) .guide-mode span {
+  color: var(--muted-ink);
+}
+:where(#modal-layer) .guide-mode-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+  color: var(--ink);
+  background: var(--yolk);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+:where(#modal-layer) .modal.wide {
+  width: min(900px, 100%);
+}

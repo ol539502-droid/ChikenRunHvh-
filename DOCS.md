@@ -3,6 +3,48 @@
 Working notes, one batch of work at a time (newest first). Each batch has its plan, what was done
 for each step, and a log of every mistake made along the way (what went wrong, and how it was fixed).
 
+# Batch 12 (10 Oct): security check, and an F1 guide
+
+## Security audit (whole game)
+
+| Area | What I checked | Result |
+| --- | --- | --- |
+| Dependencies | `npm audit` (production) | 0 known vulnerabilities |
+| Passwords | storage | scrypt with a random salt; a dummy hash so usernames can't be probed |
+| Sessions | cookie flags | HttpOnly, SameSite=Strict, Secure on HTTPS; expiry and "log out everywhere" |
+| Cross-site attacks | API and sockets | requests from other websites refused (Origin check); strict CSP; no framing |
+| Rate limits | logins, sign-ups, guests, edits, joins, chat, reports, friends, dev passkey | all limited, per real player IP (the Dockerfile trusts Railway's proxy) |
+| Dev cheat passkey | where it's checked | server only, timing-safe compare, never in the page; guesses limited per account and per network |
+| Player input | every socket event | parsed and range-checked; movement and shooting run on the server (no speed, teleport or fire-rate hacks) |
+| Injection | HTML in the page; database | player text is always shown as text; the only HTML inserted is the game's own fixed drawings; database queries are prepared statements |
+| Crashes | junk on every event (new [server/test/fuzz.test.ts](server/test/fuzz.test.ts)) | ~36 events x 30 kinds of junk x 3 forms, in every non-ranked mode: no crash, no uncaught error, no prototype pollution; Railway also restarts on failure |
+
+**Fixed in code:** nothing needed fixing. The new fuzz test now guards against future crash bugs.
+
+**For you to change on Railway (settings, not code):**
+1. **`DEV_ACCOUNTS_ONLY=1`.** Right now anyone who guesses the dev passkey gets the dev cheat in public rooms. With this, only your developer account may even try.
+2. **A long passkey** (12+ random characters). The server warns about short ones.
+
+**Known limits (by design, worth knowing):**
+- In casual modes, every player's position is sent to every client (ranked FaceChiken hides players you can't see), so a modified client could see through walls there.
+- Chat has no swear filter or mute button yet.
+
+## F1 guide
+
+- **F1** (anywhere: title screen or in a match) opens **How to play**: first steps, moving, fighting, other keys, every mode with its icon, and good-to-know notes (levels only move in FaceChiken, HvH is the cheats-allowed mode, daily challenges, reporting). F1 again, Esc or ✕ closes it.
+- The keys come from your own bindings and the modes from the mode list, so it stays right after rebinding or adding modes. It's also on the title screen ("How to play · F1", replacing the old Controls pop-up) and in the pause menu.
+- Code: [client/src/ui/Guide.ts](client/src/ui/Guide.ts); F1 in [client/src/app/App.ts](client/src/app/App.ts) (it also stops the browser's own F1 help page).
+- **Checked in the browser:**
+  - F1 opens it (6 sections, 13 modes, 18 key rows); F1 again closes it; the title-screen link opens it.
+  - In a match, F1 opens it and pauses input, and the pause menu has the button.
+  - The phone layout fits, with no errors.
+- Typecheck, the build, and three full test runs (425/425) pass.
+
+## Mistakes log (batch 12)
+
+1. **The fuzz test's first run failed on a join.** The storm had used up the player's join rate limit, which is the limit working. **Fix:** a fresh player per mode.
+2. **One full test run failed in the Knife Fight bot test.** It's the timing-flaky test noted in batch 1; this batch touched no bot or knife code, and three reruns passed 425/425.
+
 # Batch 11 (10 Oct): Training mode
 
 Solo practice: any gun, any knife, targets that never shoot back, no clock, no score, nothing counted.

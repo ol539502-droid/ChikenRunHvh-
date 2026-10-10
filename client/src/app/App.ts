@@ -1,4 +1,5 @@
 import { MODES, type CreateRoomRequest, type JoinResponse, type JoinSuccess, type ModeId } from '@game/shared';
+import { toggleGuide } from '../ui/Guide';
 import { Dev as ClassicDev } from '../dev/classic/Dev';
 import { combineDevHooks } from '../dev/combine';
 import { Dev } from '../dev/Dev';
@@ -65,6 +66,7 @@ export class App {
       account: () => openAccount(this.api, () => this.net.reconnect()),
       settings: () => openSettings(this.game.audio),
       privacy: () => openPrivacy(),
+      guide: () => this.openGuide(),
       dailyStatus: () => this.api.daily(),
       online: () => this.api.online(),
       sound: (kind) => {
@@ -117,6 +119,13 @@ export class App {
     });
     this.game.dev = combineDevHooks(this.dev.runtime, this.classicDev.runtime);
     this.bindSecretTaps();
+    // F1: the how-to-play guide, anywhere (and not the browser's own help page).
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'F1') return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.openGuide();
+    }, true);
     for (const ev of ['pointerdown', 'keydown'] as const) window.addEventListener(ev, () => this.game.audio.unlock(), { once: true });
     // Ctrl is crouch, and windowed (or outside Chrome / Edge) Ctrl+W can't be blocked: ask before leaving a match.
     window.addEventListener('beforeunload', (e) => {
@@ -146,6 +155,7 @@ export class App {
         resume,
         this.hvhPanelsButton,
         this.reportButton,
+        h('button', { type: 'button', class: 'secondary', onclick: () => this.openGuide() }, 'How to play (F1)'),
         h('button', { type: 'button', class: 'secondary', onclick: () => openSettings(this.game.audio) }, 'Settings'),
         this.leaveButton,
       ),
@@ -246,6 +256,13 @@ export class App {
     this.menu.setVisible(false);
     this.shop.open();
     void this.api.refresh().catch(() => undefined);
+    this.refreshOverlays();
+  }
+
+  /** The F1 guide; in a match it frees the mouse, and the pause screen is there when it closes. */
+  private openGuide(): void {
+    if (this.screen === 'game') this.game.input.releaseLock();
+    toggleGuide(() => this.refreshOverlays());
     this.refreshOverlays();
   }
 
