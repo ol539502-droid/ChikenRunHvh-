@@ -1,4 +1,4 @@
-import { HITBOX, chickenHeadCenter, eyeHeightOf, makeRay, raycastWorld, type MeleeTarget, type Vec3 } from '@game/shared';
+import { HITBOX, chickenHeadCenter, directionFromAngles, eyeHeightOf, makeRay, raycastWorld, round, type MeleeTarget, type Vec3 } from '@game/shared';
 import type { GameRoom } from './GameRoom';
 import type { ServerPlayer } from './ServerPlayer';
 
@@ -67,11 +67,6 @@ interface Watch {
 
 const DEG = Math.PI / 180;
 
-function viewDir(yaw: number, pitch: number): Vec3 {
-  const c = Math.cos(pitch);
-  return { x: -Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c };
-}
-
 function angle(a: Vec3, b: Vec3): number {
   const la = Math.hypot(a.x, a.y, a.z);
   const lb = Math.hypot(b.x, b.y, b.z);
@@ -123,7 +118,7 @@ export class AntiCheat {
     if (this.mode === 'off') return true;
     const w = this.watch(p);
     if (w.views.length === 0) return true;
-    const nearest = Math.min(...w.views.map((v) => angle(aim, viewDir(v.yaw, v.pitch))));
+    const nearest = Math.min(...w.views.map((v) => angle(aim, directionFromAngles(v.yaw, v.pitch))));
     if (nearest <= AC.silentAimDeg * DEG) return true;
     w.silent++;
     this.suspect(p, 'silent aim', AC.silentAimScore, { offByDeg: Math.round(nearest / DEG) });
@@ -153,10 +148,10 @@ export class AntiCheat {
     if (headshot && error <= AC.snapPrecision && w.views.length >= 2) {
       const recent = w.views.slice(-AC.snapFrames);
       const last = recent[recent.length - 1]!;
-      const turned = Math.max(...recent.map((v) => angle(viewDir(v.yaw, v.pitch), viewDir(last.yaw, last.pitch))));
+      const turned = Math.max(...recent.map((v) => angle(directionFromAngles(v.yaw, v.pitch), directionFromAngles(last.yaw, last.pitch))));
       if (turned >= AC.snapDeg * DEG) {
         w.snaps++;
-        this.suspect(p, 'aim snap', AC.snapScore, { turnedDeg: Math.round(turned / DEG), precision: round2(error) });
+        this.suspect(p, 'aim snap', AC.snapScore, { turnedDeg: Math.round(turned / DEG), precision: round(error, 2) });
       }
     }
     if (!w.lockFlagged) {
@@ -164,7 +159,7 @@ export class AntiCheat {
       const body = w.bodyErrors.length >= AC.lockMinBodyHits && mean(w.bodyErrors) <= AC.lockBodyMean;
       if (head || body) {
         w.lockFlagged = true;
-        this.suspect(p, 'aim lock', AC.kickScore, { headHits: w.headErrors.length, headMean: round2(mean(w.headErrors)), bodyHits: w.bodyErrors.length, bodyMean: round2(mean(w.bodyErrors)) });
+        this.suspect(p, 'aim lock', AC.kickScore, { headHits: w.headErrors.length, headMean: round(mean(w.headErrors), 2), bodyHits: w.bodyErrors.length, bodyMean: round(mean(w.bodyErrors), 2) });
       }
     }
     if (!w.rateFlagged && w.hits >= AC.rateMinHits && w.headshots / w.hits >= AC.rateHeadshots) {
@@ -233,8 +228,4 @@ export class AntiCheat {
     }
     return false;
   }
-}
-
-function round2(x: number): number {
-  return Math.round(x * 100) / 100;
 }

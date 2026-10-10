@@ -1,7 +1,6 @@
 import { clamp, wrapAngle, type Vec3 } from '../math';
 import { SIM_DT } from '../constants';
 
-export type HvhEra = 'legacy' | 'desync' | 'tickbase' | 'defensive';
 export interface AnimationInput { eyeYaw: number; desiredDelta: number; speed: number; crouch: number; grounded: boolean; weaponSpeed?: number; active: boolean }
 export interface AuthoritativeAnimation {
   eyeYaw: number; bodyYaw: number; lowerBodyYaw: number; maxDelta: number; stoppedTicks: number;

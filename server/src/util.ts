@@ -43,8 +43,7 @@ export class TokenBucket {
     this.tokens = capacity;
   }
 
-  take(cost = 1): boolean {
-    const now = performance.now();
+  take(cost = 1, now = performance.now()): boolean {
     this.tokens = Math.min(this.capacity, this.tokens + ((now - this.last) / 1000) * this.perSecond);
     this.last = now;
     if (this.tokens < cost) return false;

@@ -1,42 +1,5 @@
 /* ---------- developer menu ---------- */
 
-.skeet-menu .dev-window {
-  display: grid;
-  grid-template: auto minmax(0, 1fr) auto / 104px minmax(0, 1fr);
-  width: min(920px, calc((100vw - 16px) / var(--dev-scale)));
-  height: min(660px, calc((100vh - 16px) / var(--dev-scale)));
-  border-radius: 2px;
-  border: 1px solid #404040;
-  box-shadow: 0 0 0 4px #111, 0 0 0 5px #343434, 0 25px 80px #0009;
-}
-.skeet-menu .dev-window::before {
-  background: linear-gradient(90deg, #b6d77a, #79c5cf, #9a8ed2, #d97baf, #d4b371, #b6d77a);
-  height: 2px;
-}
-.skeet-menu .dev-header, .skeet-menu .dev-footer { grid-column: 1 / -1; }
-.skeet-menu .dev-brand { letter-spacing: 0; gap: 8px; }
-.skeet-menu .dev-brand b { font: 700 23px/1 Georgia, serif; color: var(--dev-accent); }
-.skeet-menu .dev-brand span:last-child { color: var(--dev-muted); font: 500 10px/1.2 'Segoe UI', sans-serif; letter-spacing: .1em; }
-.skeet-menu .dev-logo { display: none; }
-.skeet-menu .dev-tabs {
-  grid-column: 1; flex-direction: column; overflow-y: auto; border-bottom: 0;
-  border-right: 1px solid var(--dev-border); padding: 8px 0;
-}
-.skeet-menu .dev-tab { flex: none; flex-direction: column; gap: 9px; padding: 13px 6px; font-size: 10px; text-transform: none; letter-spacing: .03em; }
-.skeet-menu .dev-tab-icon { font-size: 23px; color: var(--dev-muted); }
-.skeet-menu .dev-tab.active { background: linear-gradient(90deg, color-mix(in srgb, var(--dev-accent) 10%, transparent), transparent); }
-.skeet-menu .dev-tab.active .dev-tab-icon { color: var(--dev-accent); }
-.skeet-menu .dev-tab::after { left: 0; right: auto; top: 0; bottom: 0; width: 2px; height: auto; }
-.skeet-menu .dev-body { grid-column: 2; overflow: hidden; }
-.skeet-menu .dev-nav { display: none; }
-.skeet-menu .dev-card { border-radius: 1px; background: linear-gradient(135deg, #ffffff02, transparent), var(--dev-card); }
-.skeet-menu .dev-card h3 { font-weight: 600; letter-spacing: .04em; }
-.skeet-players { display: flex; flex-direction: column; gap: 8px; }
-.skeet-player { display: flex; align-items: center; gap: 16px; padding: 10px; border: 1px solid var(--dev-border); }
-.skeet-player > div { flex: 1; min-width: 0; }
-.skeet-player b { display: block; overflow-wrap: anywhere; }
-.skeet-player small { display: block; margin-top: 5px; }
-.skeet-player label { display: flex; gap: 6px; align-items: center; }
 .skeet-binds, .skeet-watermark {
   position: absolute; color: #d9ded3; background: #171915e8; border-top: 2px solid #b6d77a;
   font: 500 11px/1.7 'Segoe UI', sans-serif; padding: 7px 12px; white-space: pre-line;
@@ -45,16 +8,6 @@
 .skeet-watermark { top: 18px; right: 20px; }
 .skeet-binds { left: 16px; top: 300px; min-width: 168px; }
 @media (max-width: 680px) {
-  .skeet-menu .dev-window { grid-template: auto auto minmax(0, 1fr) auto / minmax(0, 1fr); }
-  .skeet-menu .dev-tabs { grid-column: 1; flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 0; border-bottom: 1px solid var(--dev-border); }
-  .skeet-menu .dev-tab { flex-direction: row; gap: 5px; padding: 11px 12px; }
-  .skeet-menu .dev-tab-icon { font-size: 15px; }
-  .skeet-menu .dev-tab::after { top: auto; bottom: 0; height: 2px; width: 100%; }
-  .skeet-menu .dev-body { grid-column: 1; }
-  .skeet-menu .dev-grid { grid-template-columns: minmax(0, 1fr); }
-  .skeet-menu .dev-panel { padding: 8px; }
-  .skeet-menu .dev-footer { flex-wrap: wrap; gap: 5px; }
-  .skeet-menu .dev-hint { display: none; }
   .skeet-watermark { top: 6px; right: 8px; font-size: 9px; }
   .skeet-binds { top: auto; bottom: 125px; left: 8px; font-size: 9px; min-width: 130px; }
 }

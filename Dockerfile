@@ -20,7 +20,7 @@ COPY package.json package-lock.json ./
 COPY client/package.json client/
 COPY server/package.json server/
 COPY shared/package.json shared/
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --workspace server && npm cache clean --force
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/client/dist client/dist
 

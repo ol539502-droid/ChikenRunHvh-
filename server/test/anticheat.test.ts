@@ -52,7 +52,7 @@ let seq = 0;
 /** Looks in a direction (the input frames the anti-cheat remembers). */
 function look(room: GameRoom, p: ServerPlayer, yaw: number, pitch: number, frames = 3) {
   for (let i = 0; i < frames; i++) {
-    (p as unknown as { inputTokens: number }).inputTokens = 100;
+    p.takeInputToken = () => true;
     room.handleInput(p, { seq: ++seq, forward: 0, right: 0, jump: false, yaw, pitch });
   }
 }

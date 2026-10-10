@@ -8,27 +8,18 @@ import type { ServerPlayer } from './ServerPlayer';
  * with the last weapon, the Golden Knife, wins; when time runs out, the highest step wins.
  */
 export class ArmsRoom extends GameRoom {
-  private readonly levels = new Map<number, number>();
-
   levelOf(p: ServerPlayer): number {
-    return this.levels.get(p.pid) ?? 0;
+    return p.info.level ?? 0;
   }
 
-  protected override onMatchStart(now: number): void {
-    super.onMatchStart(now);
+  protected override onMatchStart(_now: number): void {
     for (const p of this.players.values()) this.setLevel(p, 0);
   }
 
-  protected override onPlayerJoin(p: ServerPlayer, now: number): void {
-    super.onPlayerJoin(p, now);
+  protected override onPlayerJoin(p: ServerPlayer, _now: number): void {
     // Late joiners start at the bottom (but get a chance: at the lowest step anyone's on).
     const others = [...this.players.values()].filter((o) => o !== p).map((o) => this.levelOf(o));
     this.setLevel(p, this.phase === 'playing' && others.length > 0 ? Math.max(0, Math.min(...others)) : 0);
-  }
-
-  protected override onPlayerLeave(p: ServerPlayer): void {
-    super.onPlayerLeave(p);
-    this.levels.delete(p.pid);
   }
 
   protected override spawn(p: ServerPlayer, now: number, announce: boolean): void {
@@ -38,7 +29,6 @@ export class ArmsRoom extends GameRoom {
   }
 
   protected override onKill(victim: ServerPlayer, attacker: ServerPlayer | null, cause: KillCause, now: number): void {
-    super.onKill(victim, attacker, cause, now);
     if (this.phase !== 'playing' || !attacker || attacker === victim) return;
     const level = this.levelOf(attacker);
     const current = ARMS_LADDER[level];
@@ -66,7 +56,6 @@ export class ArmsRoom extends GameRoom {
   }
 
   private setLevel(p: ServerPlayer, level: number, why?: 'up' | 'knifed'): void {
-    this.levels.set(p.pid, level);
     p.info.level = level;
     p.info.loadout = armsLoadout(level);
     p.weaponSlot = 0;

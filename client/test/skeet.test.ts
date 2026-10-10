@@ -30,12 +30,11 @@ it('weapon profiles cover the complete roster and fall back without mutating nor
 it('Skeet configs clamp every new numeric policy and preserve safe legacy imports', () => {
   const raw = defaultConfig('skeet'); raw.skeet.profiles.snipers.pointScale = 999; raw.skeet.profiles.pistols.hitchance = -1;
   raw.skeet.resolver.history = Infinity; raw.skeet.resolver.memoryMs = 9999; raw.skeet.antiAim.states.moving.desync = 999;
-  raw.skeet.cosmetics.tint = 'javascript:evil'; raw.rage.weapon.noSpread = true;
+  raw.skeet.cosmetics.tint = 'javascript:evil';
   const safe = sanitizeConfig(raw);
   assert.equal(safe.skeet.profiles.snipers.pointScale, 75); assert.equal(safe.skeet.profiles.pistols.hitchance, 0);
   assert.equal(safe.skeet.resolver.history, 8); assert.equal(safe.skeet.resolver.memoryMs, 1200);
   assert.equal(safe.skeet.antiAim.states.moving.desync, 58); assert.equal(safe.skeet.cosmetics.tint, '#b6d77a');
-  assert.equal(safe.rage.weapon.noSpread, false);
   assert.deepEqual(importConfig(exportConfig({ name: 'Skeet test', config: safe })).config, safe);
   for (const preset of presetConfigs('skeet')) { assert.deepEqual(sanitizeConfig(preset.config), preset.config); assert.deepEqual(toServerMods(preset.config), DEFAULT_MODS); }
 });

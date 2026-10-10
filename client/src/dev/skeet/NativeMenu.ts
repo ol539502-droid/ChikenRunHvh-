@@ -86,7 +86,7 @@ export class NativeMenu {
       const c:Control={type:'buttons',label,items:[{label,run}]};call(m,'native_add',id,group,label,3,0,1,'','');this.controls.push({id:id++,c,last:0});
     };
     for(const tab of buildSkeetTabs(this.dev)) {
-      if(tab.id==='visuals'||tab.id==='players'||tab.id==='configs')continue;
+      if(tab.id==='visuals'||tab.id==='configs')continue;
       for(const section of tab.sections) {
         const group=tab.id==='rage'?(section.title==='Shot overrides'?'Rage Other':'Aimbot')
           :tab.id==='antiaim'?(section.title==='Resolver'?'Other':section.title.toLowerCase().includes('network')?'Fake lag':'Anti-aimbot angles')

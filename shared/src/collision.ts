@@ -57,9 +57,7 @@ export class CollisionWorld {
         this.cells.set(key, [id]);
         return;
       }
-      let i = list.length;
-      while (i > 0 && list[i - 1]! > id) i--;
-      list.splice(i, 0, id);
+      list.push(id);
     });
   }
 

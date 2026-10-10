@@ -63,7 +63,6 @@ export const JETPACK = {
   maxRiseSpeed: 6.5,
 } as const;
 
-export const MAX_PLAYERS_PER_ROOM = 16;
 export const NAME_MAX_LENGTH = 16;
 export const CHAT_MAX_LENGTH = 120;
 export const DEFAULT_PORT = 3000;

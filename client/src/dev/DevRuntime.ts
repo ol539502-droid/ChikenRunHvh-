@@ -1,24 +1,21 @@
 import * as THREE from 'three';
 import { getKeybinds } from '../keybinds';
-import { HITBOX, PLAYER, chickenHeadCenter, defaultHvhLoadout, hvhPose, makeRay, normalize, raycastWorld, raycastPenetrating, softBoxTest, wallbangScale, WALLBANG, wrapAngle, type InputFrame, type Vec3, type ShotEvent } from '@game/shared';
+import { PLAYER, defaultHvhLoadout, hvhPose, makeRay, normalize, raycastWorld, softBoxTest, wrapAngle, type InputFrame, type Vec3, type ShotEvent } from '@game/shared';
 import type { DevHooks, GameSession } from '../game/GameSession';
 import type { RemotePlayer } from '../game/RemotePlayers';
 import { h } from '../ui/dom';
 import type { Dev } from './Dev';
-import { HVH_PANELS } from './panels';
 import { DevDebug3D } from './DevDebug3D';
 import { DevOverlay } from './DevOverlay';
-import { estimateShot, peekSteering, shotGate, type ShotTarget } from './tactics';
+import { peekSteering } from './tactics';
 import type { DevConfig } from './config';
 import { shotRecordUsable } from '@game/shared';
 import { nativeOn, nativeValue, nativeColor } from './skeet/visualValues';
 import { skeetEffectiveConfig, skeetProfile } from './skeet/model';
-import { skeetPointOffsets, skeetSafeRay } from './skeet/points';
 import { ResolverSystem, scanRage, buildHvhMatrix, hvhHitchance, afterArmor, directionFromAngles, DEFAULT_RAGE, defaultHvhCore, HvhExtensionHost, airStrafeInput, moveSpeedFor, SIM_DT,
   autoStopInput, planAutoStop, predictEnemyPeek, type AutoStopPlan, type PeekForecast, type ObservableRecord, type ShotCandidate, type ShotIntent } from '@game/shared';
 
 const DEG = Math.PI / 180;
-export interface Candidate { pid: number; r: RemotePlayer; point: THREE.Vector3; angle: number; distance: number; hp: number; visible: boolean; part: 'head' | 'body'; target: ShotTarget; offset?: Vec3 }
 const xrayMaterial = () => new THREE.MeshBasicMaterial({ depthFunc: THREE.GreaterDepth, depthWrite: false, fog: false, blending: THREE.AdditiveBlending, toneMapped: false });
 
 /** Bounded assists plus explicit, server-governed HvH abilities. */
@@ -40,12 +37,6 @@ export class DevRuntime implements DevHooks {
   private pid = 0;
   private acquiredAt = 0;
   private switchingUntil = 0;
-  private ready = false;
-  private target: Candidate | null = null;
-  private lastScanAt = -Infinity;
-  private nextEstimateAt = 0;
-  private configVersion: unknown;
-  private weaponVersion = '';
   /** Useful for verifying that expensive work follows shot opportunities, not display Hz. */
   evaluations = 0;
   private lastJump = false;
@@ -90,7 +81,7 @@ export class DevRuntime implements DevHooks {
     return 'Awaiting a target';
   }
   playerRule(pid: number): { ignore: boolean; body: boolean } { return this.playerRules.get(pid) ?? { ignore: false, body: false }; }
-  setPlayerRule(pid: number, key: 'ignore' | 'body', value: boolean): void { this.playerRules.set(pid, { ...this.playerRule(pid), [key]: value }); this.lastScanAt = -Infinity; this.ready = false; }
+  setPlayerRule(pid: number, key: 'ignore' | 'body', value: boolean): void { this.playerRules.set(pid, { ...this.playerRule(pid), [key]: value }); this.coreScanAt = -Infinity; this.coreReady = false; }
   panelChanged(): void { this.policySource = undefined; this.reset(); }
   private get policy(): DevConfig {
     const c = this.dev.config, weapon = this.session?.weapons.def;
@@ -114,8 +105,7 @@ export class DevRuntime implements DevHooks {
     this.overlay.clear(); this.reset(); this.dev.sessionEnded();
   }
   private reset(): void {
-    this.target = null; this.lastScanAt = -Infinity; this.nextEstimateAt = 0;
-    this.pid = 0; this.ready = false; this.acquiredAt = this.switchingUntil = 0;
+    this.pid = 0; this.acquiredAt = this.switchingUntil = 0;
     this.peekAnchor = null; this.returning = this.peekHeld = false;
     this.logs.length = 0; this.info.hidden = true;
     this.playerRules.clear();
@@ -141,53 +131,10 @@ export class DevRuntime implements DevHooks {
     this.dev.hud.showCrosshair = !this.active || c.misc.crosshair;
     this.dev.hud.showHitmarker = !this.active || c.misc.hitmarker;
     this.dev.hud.showDamageIndicators = !this.active || c.misc.damageIndicator;
-    if (session.mode.id === 'hvh') { this.beforeHvh(session, now); return; }
-    if (!this.playing) {
-      this.target = null; this.pid = 0; this.ready = false; this.lastScanAt = -Infinity;
-      this.peekAnchor = null; this.returning = false; this.diagnostics.state = 'Paused'; return;
+    if (session.mode.id === 'hvh') this.beforeHvh(session, now);
+    else {
+      this.pid = 0; this.peekAnchor = null; this.returning = false; this.diagnostics.state = 'Paused';
     }
-    const a = c.rage.aim, trigger = c.legit.trigger;
-    if (!a.enabled && (!trigger.enabled || !this.keyHeld(trigger.key))) {
-      this.target = null; this.pid = 0; this.ready = false;
-      this.diagnostics = { target: 'No target', damage: 0, chance: 0, state: 'Idle' }; return;
-    }
-    if (this.configVersion !== c || this.weaponVersion !== session.weapons.weapon) {
-      this.configVersion = c; this.weaponVersion = session.weapons.weapon;
-      this.lastScanAt = -Infinity; this.nextEstimateAt = 0; this.ready = false;
-    }
-    const forceBody = this.keyHeld(c.hvh.aim.bodyKey, false);
-    const part = forceBody || c.hvh.aim.bodyAim === 'prefer' ? 'body' : a.enabled ? a.hitbox : 'nearest';
-    const fov = (a.enabled ? a.fov / 2 : trigger.fov) * DEG;
-    if (now - this.lastScanAt >= 100) {
-      this.lastScanAt = now;
-      const list = this.candidates(session, part, true).filter(t => t.visible && t.angle <= fov);
-      const rank = (t: Candidate) => a.priority === 'health' ? t.hp : a.priority === 'distance' ? t.distance : t.angle;
-      let target = (a.lock && list.find(t => t.pid === this.pid)) || list.reduce<Candidate | undefined>((best,t) => !best || rank(t)<rank(best) ? t : best, undefined);
-      // Evaluate body-if-lethal for the chosen opponent rather than sampling every opponent.
-      if (target && !forceBody && a.enabled && c.hvh.aim.bodyAim === 'lethal') {
-        const body = this.candidates(session, 'body', true, target.pid)[0];
-        if (body?.visible) {
-          const eye = session.eye();
-          const direction = normalize({ x:body.point.x-eye.x, y:body.point.y-eye.y, z:body.point.z-eye.z });
-          const estimate = estimateShot(session.weapons.def, eye, direction, body.target, session.horizontalSpeed(), !session.local.onGround, this.dev.input.aiming, session.collision, c.hvh.aim.autowall && session.mode.wallbang ? softBoxTest(session.map) : undefined);
-          if (estimate.damage >= body.hp) target = body;
-        }
-      }
-      if (target && target.pid !== this.pid) {
-        this.switchingUntil = !this.rageTiming && this.pid ? now + c.hvh.aim.switchDelay : now;
-        this.pid = target.pid; this.acquiredAt = now; this.nextEstimateAt = 0; this.ready = false;
-      }
-      this.target = target ?? null;
-    }
-    const target = this.target;
-    if (!target) { this.pid = 0; this.ready = false; this.diagnostics = {target:'No target',damage:0,chance:0,state:'Waiting for sight'}; return; }
-    const trackingPart = target.part;
-    const live = this.candidates(session, forceBody ? 'body' : trackingPart, true, target.pid)[0];
-    if (!live?.visible || live.angle > fov) {
-      this.target = null; this.pid = 0; this.ready = false; this.diagnostics.state = 'Waiting for sight'; return;
-    }
-    this.target = live;
-    this.dev.input.assistedAds = this.dev.panelId === 'skeet' && a.enabled && session.weapons.def.scope && live.distance > 12 && skeetProfile(c, session.weapons.def).autoScope;
   }
 
   /** Called after movement, remote interpolation and the camera have updated for this frame. */
@@ -221,44 +168,7 @@ export class DevRuntime implements DevHooks {
       Object.assign(this.diagnostics, { damage: Math.round(damage), chance: Math.round(estimate.chance*100), state });
       return state === 'Ready';
     }
-    if (!this.playing || !session || !this.target) return false;
-    const auto = a.enabled && a.autoTarget;
-    const assisting = auto || (!a.enabled && trigger.enabled && this.keyHeld(trigger.key));
-    if (!assisting) { this.ready = false; this.diagnostics.state = 'Aim only'; return false; }
-    const part = this.keyHeld(c.hvh.aim.bodyKey, false) ? 'body' : this.target.part;
-    const target = this.candidates(session, part, true, this.pid)[0];
-    if (!target?.visible || target.angle > (auto ? a.fov / 2 : trigger.fov)*DEG) {
-      this.ready = false; this.diagnostics.state = 'Waiting for sight'; return false;
-    }
-    const w = session.weapons.def;
-    if (w.projectile || w.melee) { this.ready = false; this.diagnostics.state = 'Manual weapon'; return false; }
-    const reaction = this.rageTiming ? 0 : auto ? c.hvh.aim.reaction : Math.max(a.enabled ? c.hvh.aim.reaction : 0, trigger.delay);
-    if (!this.rageTiming && (now < this.switchingUntil || now-this.acquiredAt < Math.max(100, reaction))) {
-      this.ready = false; this.diagnostics.state = now < this.switchingUntil ? 'Switching target' : 'Acquiring target'; return false;
-    }
-    const weaponState = session.weapons.shotState(now);
-    if (weaponState !== 'Ready') {
-      this.diagnostics.state = weaponState;
-      // Hold an assisted burst through its gap, but validate the next bullet when it is due.
-      return weaponState === 'Cooldown' && this.ready;
-    }
-    if (now < this.nextEstimateAt) return false;
-    this.nextEstimateAt = now + 50; this.evaluations++;
-    const eye = session.eye(), direction = a.enabled ? normalize({ x: target.point.x - eye.x, y: target.point.y - eye.y, z: target.point.z - eye.z }) : session.aimDirection(eye);
-    const safe = this.dev.panelId === 'skeet' && skeetProfile(c, w).safePoints;
-    const uncertainty = 0;
-    const autowall = c.hvh.aim.autowall && session.mode.wallbang;
-    const estimate = estimateShot(w, eye, direction, target.target, session.horizontalSpeed(), !session.local.onGround, this.dev.input.aiming,
-      undefined, undefined, (ray, range) => {
-        const hit = session.raycastScene(ray, range, autowall);
-        if (safe && !skeetSafeRay(eye, { x: ray.dx, y: ray.dy, z: ray.dz }, target.target, uncertainty, range)) return null;
-        return hit.pid === target.pid ? { t:hit.t, headshot:hit.headshot, scale:wallbangScale(hit.soft,hit.t) } : null;
-      });
-    const minimum = this.keyHeld(c.hvh.aim.overrideKey, false) ? c.hvh.aim.damageOverride : c.hvh.aim.minDamage;
-    const state = shotGate(estimate, minimum, c.hvh.aim.hitchance, target.hp, now-this.acquiredAt, reaction);
-    this.diagnostics = { target:target.r.info.name, damage:Math.round(estimate.damage), chance:Math.round(estimate.chance), state };
-    this.ready = state === 'Ready';
-    return this.ready;
+    return false;
   }
   onShot(session: GameSession, assisted = false): void {
     if (!this.active) return;
@@ -347,8 +257,7 @@ export class DevRuntime implements DevHooks {
       return this.coreReady && target && shotRecordUsable(target.record.t, session.serverNow(), this.dev.ping() ?? 0) && session.remotes.players.get(target.target)?.latest?.alive
         ? normalize({ x: target.point.x - session.eye().x, y: target.point.y - session.eye().y, z: target.point.z - session.eye().z }) : null;
     }
-    const target = this.target, eye = session.eye();
-    return target?.r.alive && target.visible ? normalize({ x: target.point.x - eye.x, y: target.point.y - eye.y, z: target.point.z - eye.z }) : null;
+    return null;
   }
   shotIntent(): ShotIntent | undefined { return this.coreShot; }
 
@@ -495,42 +404,6 @@ export class DevRuntime implements DevHooks {
     if (!this.active || !w.enabled || !r.alive) return null;
     const team=session.isFriendly(r.info); if(team ? !w.teammates : !w.enemies) return null;
     const m=team?this.friendly:this.enemy; m.color.set(team?w.teamColor:w.enemyColor); m.opacity=w.opacity; return m;
-  }
-  candidates(session: GameSession, part:'head'|'body'|'nearest', _skipFriendly:boolean, onlyPid?:number): Candidate[] {
-    const config = this.policy, skeet = this.dev.panelId === 'skeet', profile = skeetProfile(config, session.weapons.def);
-    const out:Candidate[]=[], eye=session.eye();
-    const yaw=this.dev.input.yaw,pitch=this.dev.input.pitch;
-    const forward=new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
-    for(const [pid,r] of session.remotes.players){
-      if(onlyPid !== undefined && onlyPid !== pid) continue;
-      if(skeet && this.playerRule(pid).ignore) continue;
-      if(!r.alive || r.latest?.alive === false || session.serverNow()-r.latestAt>500 || session.isFriendly(r.info) || r.latest?.shielded || r.latest?.vehicle) continue;
-      const k=r.scale;
-      const heading=HVH_PANELS[this.dev.panelId].resolveYaw(r,this.dev.config);
-      const head=new THREE.Vector3().copy(chickenHeadCenter(r.position,heading,k,r.pitch));
-      const body=new THREE.Vector3(r.position.x,r.position.y+HITBOX.bodyHeight*0.55*k,r.position.z);
-      const angleTo=(point:THREE.Vector3)=>forward.angleTo(point.clone().sub(session.camera.position));
-      const preferBody = skeet && this.playerRule(pid).body;
-      const center=preferBody ? body : part==='head'?head:part==='nearest'&&angleTo(head)<angleTo(body)?head:body;
-      const targetPart = center === head ? 'head' : 'body';
-      const tracked = onlyPid !== undefined && this.target?.pid === pid && this.target.part === targetPart ? this.target.offset : undefined;
-      const offsets = tracked ? [tracked] : skeetPointOffsets(targetPart, k, profile.pointScale, skeet && profile.multipoint);
-      let point = center, offset: Vec3 | undefined, visible = false;
-      for (const candidate of offsets) {
-        const p = center.clone().add(new THREE.Vector3(candidate.x, candidate.y, candidate.z));
-        const delta = p.clone().sub(new THREE.Vector3(eye.x, eye.y, eye.z)), length = delta.length();
-        if (length < 0.01) continue;
-        const path = makeRay(eye, { x: delta.x / length, y: delta.y / length, z: delta.z / length });
-        const cover = config.hvh.aim.autowall && session.mode.wallbang ? raycastPenetrating(path, session.collision, length, softBoxTest(session.map), WALLBANG.maxBoxes).wall : raycastWorld(path, session.collision, length);
-        const clear = !cover || cover.t >= length - 0.01;
-        if (!visible || (clear && angleTo(p) < angleTo(point))) { point = p; offset = candidate; visible = clear; }
-        if (clear && candidate.x === 0 && candidate.y === 0 && candidate.z === 0) break;
-      }
-      const distance=point.distanceTo(new THREE.Vector3(eye.x,eye.y,eye.z));
-      if(distance<0.01)continue;
-      out.push({pid,r,point,part:targetPart,offset,angle:angleTo(point),distance,hp:r.latest?.hp??100,visible,target:{x:r.position.x,y:r.position.y,z:r.position.z,yaw:heading,pitch:r.pitch,scale:k,hp:r.latest?.hp??100,armor:r.latest?.armor??0}});
-    }
-    return out;
   }
   private keyHeld(code:string, emptyMeansAlways=true):boolean { return code ? this.dev.input.isDown(code) : emptyMeansAlways; }
 }

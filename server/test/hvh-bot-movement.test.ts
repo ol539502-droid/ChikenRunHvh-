@@ -27,7 +27,7 @@ it('HvH bots pursue a public record around a finite tall wall instead of walking
   let now = performance.now();
   let crossed = false;
   for (let tick = 0; tick < 640; tick++) {
-    (bot as unknown as { inputTokens: number }).inputTokens = 100;
+    bot.takeInputToken = () => true;
     stepRoom(room, now += SIM_DT * 1000);
     if (bot.state.z < 15) { crossed = true; break; }
   }
@@ -42,7 +42,7 @@ it('ordinary bots retain their obstacle steering', t => {
   let now = performance.now();
   let steered = false;
   for (let tick = 0; tick < 160; tick++) {
-    (bot as unknown as { inputTokens: number }).inputTokens = 100;
+    bot.takeInputToken = () => true;
     stepRoom(room, now += SIM_DT * 1000);
     if (Math.abs(bot.state.x - 20) > 2) { steered = true; break; }
   }
@@ -70,13 +70,13 @@ it('HvH bots discard old-life aim and return state even when respawn happens bet
     bot.respawn(30, 20, 0, now += SIM_DT * 1000, 0);
     enemy.respawn(38, 20, 0, now, 0);
     bot.shieldUntil = enemy.shieldUntil = 0;
-    (bot as unknown as { inputTokens: number }).inputTokens = 100;
+    bot.takeInputToken = () => true;
     room.bots.update(now);
     const fresh = bot.commands.next()!;
     assert.ok(Math.abs(fresh.yaw + Math.PI / 2) < 0.1, 'new life must scan from its new position');
     assert.ok(Math.abs(fresh.forward) + Math.abs(fresh.right) < 0.01, 'new life must not return to the old spawn');
     place(bot, 31, 20);
-    (bot as unknown as { inputTokens: number }).inputTokens = 100;
+    bot.takeInputToken = () => true;
     room.bots.update(now += SIM_DT * 1000);
     const input = bot.commands.next()!;
     const x = -Math.sin(input.yaw) * input.forward + Math.cos(input.yaw) * input.right;

@@ -1,5 +1,4 @@
 import type { Aabb } from './collision';
-import type { BlockKind } from './protocol';
 
 /** Sandbox blocks sit on a grid of cubes this big (same as a crate). */
 export const BLOCK_SIZE = 1.2;
@@ -28,13 +27,3 @@ export function cellOf(x: number, y: number, z: number): { cx: number; cy: numbe
 export function cellKey(cx: number, cy: number, cz: number): string {
   return `${cx},${cy},${cz}`;
 }
-
-export const BLOCK_COLORS: Record<BlockKind, number> = {
-  crate: 0xc28a4e,
-  wood: 0x9b6b3d,
-  stone: 0x9a9da3,
-  brick: 0x9e4834,
-  hay: 0xe2bd5e,
-  metal: 0x4f7d5b,
-  concrete: 0xb8b5ae,
-};

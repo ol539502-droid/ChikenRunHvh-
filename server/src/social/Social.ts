@@ -212,10 +212,6 @@ export class Social {
   // Parties
   // ---------------------------------------------------------------------------
 
-  partyFor(userId: number): PartyState | null {
-    return this.partyState(this.partyOf.get(userId) ?? null);
-  }
-
   private partyState(party: Party | null): PartyState | null {
     if (!party) return null;
     const now = Date.now();

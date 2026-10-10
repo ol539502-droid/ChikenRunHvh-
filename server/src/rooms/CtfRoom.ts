@@ -35,8 +35,7 @@ export class CtfRoom extends GameRoom {
     return { blocks: [], flags: this.states() };
   }
 
-  protected override onMatchStart(now: number): void {
-    super.onMatchStart(now);
+  protected override onMatchStart(_now: number): void {
     for (const f of this.flags) this.home(f);
     for (const p of this.players.values()) p.carryingFlag = 0;
     this.emitFlag('returned', 1, 0);
@@ -48,7 +47,6 @@ export class CtfRoom extends GameRoom {
   }
 
   protected override onPlayerLeave(player: ServerPlayer): void {
-    super.onPlayerLeave(player);
     this.drop(player, performance.now());
   }
 

@@ -32,7 +32,7 @@ import {
   pelletDirections,
   pointOnRay,
   rayChicken,
-  rayHvhChicken, CommandChoker, NetworkSimulator, buildCommand, defaultHvhCore, fakeLagTicks,
+  rayHvhChicken, CommandChoker, NetworkSimulator, defaultHvhCore, fakeLagTicks,
   hvhSpread,
   raycastPenetrating,
   raycastWorld,
@@ -196,7 +196,6 @@ export class GameSession {
   private blockIndex = 0;
   private fireWasDown = false;
   private aimWasDown = false;
-  private lastMovementInput = { forward: 0, right: 0 };
   private readonly handlers: [keyof ServerToClientEvents, (...args: never[]) => void][] = [];
 
   private match: MatchState;
@@ -267,7 +266,7 @@ export class GameSession {
     this.wallbangBoxes = this.mode.wallbang ? WALLBANG.maxBoxes : 0;
     this.local = new LocalPlayer(ctx.scene, meInfo, me);
     this.local.tactical = this.mode.id === 'hvh';
-    this.remotes = new RemotePlayers(ctx.scene, this.mode.id === 'hvh');
+    this.remotes = new RemotePlayers(ctx.scene);
     this.rig = new CameraRig(ctx.camera, this.collision);
     this.projectiles = new ClientProjectiles(ctx.scene, this.collision, this.effects);
     this.loot = new LootView(ctx.scene, ctx.world.map, this.effects);
@@ -371,7 +370,6 @@ export class GameSession {
       if (dev) frame = dev.modifyFrame(this, frame);
       if (this.mode.id !== 'hvh') frame = { ...frame, autoHop: false, subtickStrafe: false };
       if (this.bombHolds(frame)) frame = { ...frame, forward: 0, right: 0, jump: false, crouch: true };
-      this.lastMovementInput = { forward: frame.forward, right: frame.right };
       this.local.predict(frame, this.collision, hopMaxFor(this.weapons.weapon), moveSpeedFor(this.weapons.weapon));
       if (this.mode.id === 'hvh') {
         const core = this.weapons.hvh.core ?? defaultHvhCore();
@@ -380,7 +378,7 @@ export class GameSession {
         const speed = this.horizontalSpeed();
         const shooting = input.firing || dev?.wantsFire(now) === true;
         const choke = fakeLagTicks(core,frame.seq,speed,shooting);
-        const batch = this.commandChoker.push(buildCommand(frame), choke, !input.active || (core.fakeLagBreakOnShot && shooting));
+        const batch = this.commandChoker.push(frame, choke, !input.active || (core.fakeLagBreakOnShot && shooting));
         if (batch.length) this.commandNetwork!.send(batch, now);
       } else net.socket.emit('input', frame);
     }
@@ -577,10 +575,6 @@ export class GameSession {
   horizontalSpeed(): number {
     if (this.local.car) return carAimSpeed(Math.hypot(this.local.car.speed, this.local.car.slip));
     return this.local.state.horizontalSpeed;
-  }
-
-  isMoving(): boolean {
-    return this.lastMovementInput.forward !== 0 || this.lastMovementInput.right !== 0;
   }
 
   /** Your engine growls with your speed while you drive. */

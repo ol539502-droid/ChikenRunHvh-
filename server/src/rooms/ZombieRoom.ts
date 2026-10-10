@@ -72,7 +72,6 @@ export class ZombieRoom extends GameRoom {
   private nextSpawnAt = 0;
   private nextStateAt = 0;
   private bossPid = 0;
-  private bossIndexSpawned = 0;
   private readonly zombies = new Map<number, Zombie>();
   private readonly upgrades = new Map<number, Record<string, number>>();
   private readonly brain: ZombieBrain;
@@ -166,27 +165,23 @@ export class ZombieRoom extends GameRoom {
   }
 
   protected override onPlayerJoin(p: ServerPlayer, _now: number): void {
-    super.onPlayerJoin(p, _now);
     if (p.info.undead || p.info.bot) return;
     p.money = this.phase === 'playing' ? Math.max(p.money, ZOMBIE.startMoney) : ZOMBIE.startMoney;
     this.emitMoney(p);
   }
 
   protected override onPlayerLeave(p: ServerPlayer): void {
-    super.onPlayerLeave(p);
     this.upgrades.delete(p.pid);
     this.lastBuildAt.delete(p.pid);
   }
 
   protected override onMatchStart(now: number): void {
-    super.onMatchStart(now);
     this.clearZombies();
     this.clearBlocks();
     this.upgrades.clear();
     this.kills = 0;
     this.wave = 1;
     this.bossPid = 0;
-    this.bossIndexSpawned = 0;
     this.queue = [];
     this.zphase = 'prep';
     this.prepEndsAt = now + ZOMBIE.prepMs;
@@ -306,7 +301,6 @@ export class ZombieRoom extends GameRoom {
   private spawnZombie(kind: ZombieKind, now: number, near?: Vec3): ServerPlayer | null {
     const stats = zombieStats(kind, this.wave);
     const boss = kind === 'boss';
-    const number = boss ? ++this.bossIndexSpawned : 0;
     const title = boss ? `☠️ ${BOSS_NAMES[(bossNumber(this.wave) - 1) % BOSS_NAMES.length]}` : kind === 'brute' ? '🧟 Brute' : kind === 'runner' ? '🧟 Runner' : '🧟 Zombie';
     const res = this.join(null, { userId: null, name: title, appearance: LOOKS[kind], loadout: ['knife'], bot: true, team: 2, rank: 1 });
     if (!res.ok) return null;
@@ -349,7 +343,6 @@ export class ZombieRoom extends GameRoom {
     this.announcePlayer(p);
     if (boss) {
       this.bossPid = p.pid;
-      void number;
       this.systemMessage(`☠️ ${p.info.name} has risen!`);
     }
     return p;
@@ -409,8 +402,7 @@ export class ZombieRoom extends GameRoom {
     super.damage(victim, attacker, amount, headshot, cause, from, now, flags);
   }
 
-  protected override onKill(victim: ServerPlayer, attacker: ServerPlayer | null, cause: KillCause, now: number): void {
-    super.onKill(victim, attacker, cause, now);
+  protected override onKill(victim: ServerPlayer, attacker: ServerPlayer | null, _cause: KillCause, now: number): void {
     victim.respawnAt = Infinity;
     const z = this.zombies.get(victim.pid);
     if (!z) return;

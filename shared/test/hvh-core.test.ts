@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { CommandBuffer, CommandChoker, ExploitResource, NetworkSimulator, buildCommand, correctMovement, createAnimation, stepAnimation,
+import { CommandBuffer, CommandChoker, ExploitResource, NetworkSimulator, correctMovement, createAnimation, stepAnimation,
   maximumBodyDelta, observableRecord, ResolverSystem, buildHvhMatrix, matrixPoints, pointSafety, makeRay, normalize, rayHvhMatrix,
   auditShot, createCollisionWorld, MAPS, WEAPONS, scanRage, DEFAULT_RAGE, SIM_DT, stepPlayer, createMoveState,
   traceHvhCover, coverDamageScale, CollisionWorld, HvhExtensionHost, defaultHvhLoadout, hvhWeapon, hvhSpread, bodyScale, type ObservableRecord } from '../src/index';
@@ -12,7 +12,11 @@ const direction = (point: {x: number; y: number; z: number}) => normalize({x: po
 describe('guide-driven simulation contracts', () => {
   it('uses immutable commands, preserves movement through anti-aim and never grants batch speed', () => {
     const f = { seq: 1, forward: 1, right: 0.25, yaw: 0.3, pitch: 0, jump: false };
-    const cmd = buildCommand(f); assert.ok(Object.isFrozen(cmd));
+    const choker = new CommandChoker(), [cmd] = choker.push(f, 0);
+    assert.ok(Object.isFrozen(cmd));
+    f.forward = 0;
+    assert.equal(cmd!.forward, 1);
+    f.forward = 1;
     const corrected = correctMovement(f, -2);
     const world = createCollisionWorld(MAPS.flat), a = createMoveState(20, 0, 20), b = { ...a };
     stepPlayer(a, f, SIM_DT, world); stepPlayer(b, corrected, SIM_DT, world);

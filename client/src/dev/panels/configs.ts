@@ -4,6 +4,23 @@ import type { Dev } from '../Dev';
 
 /** Configs tab: save, load, delete, rename, create, export and import named configs. */
 export function configsPanel(dev: Dev): HTMLElement & { refresh: () => void } {
+  return renderConfigsPanel(dev, { sanitizeConfig, importConfig, exportConfig });
+}
+
+export function renderConfigsPanel<T>(dev: {
+  config: T;
+  configs: { name: string; config: T }[];
+  saveConfigList(): void;
+  replaceConfig(config: T): void;
+  menuRefresh(): void;
+  click(): void;
+  notify(text: string, kind?: 'info' | 'good' | 'bad'): void;
+}, schema: {
+  sanitizeConfig(raw: unknown): T;
+  importConfig(text: string): { name: string; config: T };
+  exportConfig(named: { name: string; config: T }): string;
+}): HTMLElement & { refresh: () => void } {
+  const { sanitizeConfig, importConfig, exportConfig } = schema;
   let selected = dev.configs[0]?.name ?? '';
   const list = h('div', { class: 'dev-clist', role: 'listbox', 'aria-label': 'Saved configs' });
   const name = h('input', { class: 'dev-text', placeholder: 'Config name', maxlength: 24, 'aria-label': 'Config name' });

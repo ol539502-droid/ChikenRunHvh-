@@ -1,7 +1,5 @@
 export type PickupKind = 'medkit' | 'armor' | 'fuel' | 'eggs';
 
-export const PICKUP_KINDS: readonly PickupKind[] = ['medkit', 'armor', 'fuel', 'eggs'];
-
 export const PICKUP_INFO: Record<PickupKind, { name: string; color: number }> = {
   medkit: { name: 'Medkit', color: 0xe53935 },
   armor: { name: 'Armor', color: 0x42a5f5 },

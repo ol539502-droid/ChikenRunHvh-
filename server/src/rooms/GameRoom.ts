@@ -604,7 +604,6 @@ export class GameRoom {
         p.fakePitch = Math.asin(clamp(req.dy / Math.hypot(req.dx, req.dy, req.dz), -1, 1));
       }
     }
-    p.lastFiredTick = this.hvhTick;
 
     const eye = this.eyeOf(p);
     const len = Math.hypot(req.dx, req.dy, req.dz);
@@ -1337,8 +1336,7 @@ export class GameRoom {
         p.yaw = p.animation.bodyYaw; p.fakeYaw = p.animation.eyeYaw; p.simulationTime = now;
       }
       p.history.push({ t: now, x: p.state.x, y: p.state.y, z: p.state.z, yaw: p.yaw, alive: p.alive, scale: bodyScale(p.state),
-        pitch: this.mode.id === 'hvh' ? p.fakePitch : p.pitch, tick: this.hvhTick, eyeYaw: p.animation.eyeYaw,
-        matrix: this.mode.id === 'hvh' ? buildHvhMatrix(p.state, p.yaw, bodyScale(p.state), p.fakePitch) : undefined });
+        pitch: this.mode.id === 'hvh' ? p.fakePitch : p.pitch });
       if (p.reloadUntil > 0 && now >= p.reloadUntil) {
         p.reloadUntil = 0;
         p.mags.set(p.weapon, p.magazineSize(p.weapon));

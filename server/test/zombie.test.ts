@@ -28,7 +28,7 @@ function setup() {
     while (now < end) {
       now = clock = Math.min(end, now + STEP);
       // Time runs faster than real here, so the per-player input rate limit would starve everyone.
-      for (const p of room.players.values()) (p as unknown as { inputTokens: number }).inputTokens = 100;
+      for (const p of room.players.values()) p.takeInputToken = () => true;
       update(now);
     }
   };

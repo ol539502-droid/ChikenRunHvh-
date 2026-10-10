@@ -29,7 +29,6 @@ export class RemotePlayer {
   fakeYaw = 0;
   pitch = 0;
   scale = 1;
-  private readonly realHeading = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.12, 0), 0.9, 0x6bf5e5, 0.22, 0.12);
   alive = true;
   /**
    * FaceChiken fog of war: the server stopped sending this enemy because you can't see them.
@@ -37,14 +36,12 @@ export class RemotePlayer {
    */
   culled = false;
 
-  constructor(info: PlayerInfo, friendly: boolean, _hvh = false) {
+  constructor(info: PlayerInfo, friendly: boolean) {
     this.info = info;
     this.friendly = friendly;
     this.chicken = new Chicken(info.appearance, info.team);
     this.tag = new NameTag(info.name, friendly || info.team === 0 ? 0xffffff : TEAM_COLORS[info.team], info.dev);
     this.chicken.root.add(this.tag.sprite);
-    this.realHeading.visible = false;
-    this.chicken.root.add(this.realHeading);
     // Hidden until the first snapshot tells us where it is.
     this.chicken.root.visible = false;
   }
@@ -129,9 +126,6 @@ export class RemotePlayer {
     this.pitch = b && renderTime > a.t ? lerp(a.s.fakePitch ?? a.s.pitch, b.s.fakePitch ?? b.s.pitch, (renderTime-a.t)/(b.t-a.t)) : s.fakePitch ?? s.pitch;
     this.chicken.setAim(this.pitch);
     if (this.alive) root.rotation.y = fakeYaw;
-    this.realHeading.visible = false;
-    const heading = this.yaw-fakeYaw;
-    this.realHeading.setDirection(new THREE.Vector3(-Math.sin(heading),0,-Math.cos(heading)));
     // Kill events or snapshots can mark a player dead; only a spawn event (teleport) revives them.
     // Otherwise the delayed, interpolated samples would briefly bring the corpse back to life.
     if (!s.alive && this.alive) this.kill();
@@ -156,7 +150,6 @@ export class RemotePlayer {
   }
 
   dispose(): void {
-    this.realHeading.dispose();
     this.tag.dispose();
     this.chicken.dispose();
   }
@@ -167,7 +160,7 @@ export class RemotePlayers {
   private readonly scene: THREE.Scene;
   readonly players = new Map<number, RemotePlayer>();
 
-  constructor(scene: THREE.Scene, private readonly hvh = false) {
+  constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
@@ -185,7 +178,7 @@ export class RemotePlayers {
       existing.update(info, friendly);
       return;
     }
-    const player = new RemotePlayer(info, friendly, this.hvh);
+    const player = new RemotePlayer(info, friendly);
     this.players.set(info.pid, player);
     this.scene.add(player.chicken.root);
   }

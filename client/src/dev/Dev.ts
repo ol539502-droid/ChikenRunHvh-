@@ -1,4 +1,4 @@
-import { DEFAULT_MODS, type DevAction, type DevResult, type DevStatus, type HvhPanelId } from '@game/shared';
+import { DEFAULT_MODS, type DevResult, type DevStatus, type HvhPanelId } from '@game/shared';
 import type { AudioEngine } from '../game/Audio';
 import type { Input } from '../game/Input';
 import type { GameSocket } from '../net/Network';
@@ -178,22 +178,6 @@ export class Dev {
       return res;
     } catch {
       return { ok: false, error: 'The server did not answer.' };
-    }
-  }
-
-  /** Asks the server to do something to a player, and reports the outcome. */
-  async action(action: DevAction, success?: string): Promise<boolean> {
-    try {
-      const res = await this.socket.timeout(REQUEST_TIMEOUT_MS).emitWithAck('devAction', action);
-      if (res.ok) {
-        if (success) this.notify(success, 'good');
-      } else {
-        this.notify(res.error ?? 'Not allowed.', 'bad');
-      }
-      return res.ok;
-    } catch {
-      this.notify('The server did not answer.', 'bad');
-      return false;
     }
   }
 

@@ -1,5 +1,4 @@
 import { HVH_STANCES, hvhStance } from '@game/shared';
-import { h } from '../../ui/dom';
 import type { Dev } from '../Dev';
 import type { Control, Section, Tab } from '../controls';
 import { buildTabs } from '../tabs';
@@ -78,10 +77,6 @@ export function buildSkeetTabs(dev: Dev): Tab[] {
         info('Preview', () => 'Local first-person weapon finish'),
       ] }, ...sections('weapons'),
     ] },
-    { id: 'players', label: 'Players', icon: '☺', sections: [
-      { title: 'Opponent overrides', icon: '☺', wide: true, items: [{ type: 'custom', label: 'Match players', render: () => skeetPlayers(dev) }] },
-      { title: 'Override scope', icon: '◇', wide: true, items: [info('This match', () => 'Ignore excludes an opponent from assisted targeting. Body prioritizes their body hitbox.', 'Overrides clear when you leave or switch panels. Manual shots remain available.')] },
-    ] },
     { id: 'configs', label: 'Configs', icon: '▣', sections: sections('configs') },
     { id: 'extensions', label: 'Extensions', icon: '⌘', sections: [
       { title: 'Native recipes', icon: '⌘', wide: true, items: [
@@ -93,34 +88,4 @@ export function buildSkeetTabs(dev: Dev): Tab[] {
       ] },
     ] },
   ];
-}
-
-function skeetPlayers(dev: Dev): HTMLElement & { refresh(): void } {
-  const root = Object.assign(h('div', { class: 'skeet-players' }), { refresh() {} });
-  const rows = new Map<number, { el: HTMLElement; title: HTMLElement; detail: HTMLElement; ignore: HTMLInputElement; body: HTMLInputElement }>();
-  root.refresh = () => {
-    const session = dev.runtime.currentSession;
-    const players = session ? [...session.infos.values()].filter(p => p.pid !== session.selfPid) : [];
-    const current = new Set(players.map(p => p.pid));
-    for (const [pid, row] of rows) if (!current.has(pid)) { row.el.remove(); rows.delete(pid); }
-    if (!players.length) { if (!root.querySelector('p')) root.append(h('p', { class: 'dev-muted' }, 'Join a match with opponents to set overrides.')); return; }
-    root.querySelector('p')?.remove();
-    for (const p of players) {
-      let row = rows.get(p.pid);
-      if (!row) {
-        const title = h('b'), detail = h('small', { class: 'dev-muted' });
-        const ignore = h('input', { type: 'checkbox', class: 'dev-check', 'aria-label': `Ignore ${p.name}` });
-        const body = h('input', { type: 'checkbox', class: 'dev-check', 'aria-label': `Body aim ${p.name}` });
-        ignore.addEventListener('change', () => dev.runtime.setPlayerRule(p.pid, 'ignore', ignore.checked));
-        body.addEventListener('change', () => dev.runtime.setPlayerRule(p.pid, 'body', body.checked));
-        const el = h('div', { class: 'skeet-player' }, h('div', null, title, detail), h('label', null, ignore, 'Ignore'), h('label', null, body, 'Body'));
-        row = { el, title, detail, ignore, body }; rows.set(p.pid, row); root.append(el);
-      }
-      const state = session?.remotes.players.get(p.pid)?.latest, rule = dev.runtime.playerRule(p.pid);
-      row.title.textContent = p.name + (p.bot ? ' [BOT]' : '');
-      row.detail.textContent = state ? `${state.alive ? `${state.hp} HP` : 'Down'} · ${hvhStance({ speed: state.horizontalSpeed, onGround: state.onGround, crouching: state.crouching })} · ${p.kills} K / ${p.deaths} D` : `${p.kills} K / ${p.deaths} D`;
-      row.ignore.checked = rule.ignore; row.body.checked = rule.body;
-    }
-  };
-  root.refresh(); return root;
 }

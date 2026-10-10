@@ -33,6 +33,7 @@ export class ServerPlayer {
   readonly history = new History();
   readonly chatLimiter = new TokenBucket(3, 1.5);
   readonly buildLimiter = new TokenBucket(8, 6);
+  private readonly inputLimiter = new TokenBucket(INPUT_BURST, SIM_RATE * INPUT_RATE_TOLERANCE);
 
   state: MoveState = createMoveState(0, 0, 0);
   yaw = 0;
@@ -53,7 +54,6 @@ export class ServerPlayer {
   readonly fireQueue: Readonly<import('@game/shared').FireRequest>[] = [];
   hvhMode = false;
   simulationTime = 0;
-  lastFiredTick = -100;
   antiBruteSide = 1;
   lastThreatTick = -100;
   weaponHeat = 0;
@@ -62,8 +62,6 @@ export class ServerPlayer {
   pitch = 0;
   lastInput: InputFrame | null = null;
   lastSeq = 0;
-  private inputTokens = INPUT_BURST;
-  private lastRefill = performance.now();
 
   alive = false;
   hp = 0;
@@ -135,18 +133,9 @@ export class ServerPlayer {
     return magazineSize(WEAPONS[id].magazine, this.mods);
   }
 
-  get moving(): boolean {
-    return this.lastInput !== null && (this.lastInput.forward !== 0 || this.lastInput.right !== 0);
-  }
-
   /** Token bucket that stops a client from sending inputs faster than real time (speed hacking). */
   takeInputToken(now: number): boolean {
-    const refill = ((now - this.lastRefill) / 1000) * SIM_RATE * INPUT_RATE_TOLERANCE;
-    this.inputTokens = Math.min(INPUT_BURST, this.inputTokens + refill);
-    this.lastRefill = now;
-    if (this.inputTokens < 1) return false;
-    this.inputTokens -= 1;
-    return true;
+    return this.inputLimiter.take(1, now);
   }
 
   /** Fresh life at a spawn point: full health, full magazines, starting grenades. */
@@ -157,7 +146,7 @@ export class ServerPlayer {
     this.fakePitch = 0;
     this.hvhCoverAt = -Infinity; this.hvhCoverSide = 0; this.hvhTargetYaw = undefined;
     this.commands.clear(); this.fireQueue.length = 0; this.resource.reset(); this.animation = createAnimation(yaw);
-    this.simulationTime = now; this.lastFiredTick = this.lastThreatTick = -100; this.antiBruteSide = 1;
+    this.simulationTime = now; this.lastThreatTick = -100; this.antiBruteSide = 1;
     this.weaponHeat = 0;
     this.revealUntil = this.concealUntil = 0;
     this.pitch = 0;

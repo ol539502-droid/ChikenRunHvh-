@@ -3,7 +3,7 @@ import { afterEach, describe, it } from 'node:test';
 import { PLAYER, WEAPONS, normalize } from '@game/shared';
 import type { GameRoom } from '../src/rooms/GameRoom';
 import type { ServerPlayer } from '../src/rooms/ServerPlayer';
-import { addPlayer, makeRoom, place, type RecordedEvent } from './helpers';
+import { addPlayer, makeRoom, place, stepRoom, type RecordedEvent } from './helpers';
 
 let current: GameRoom | null = null;
 afterEach(() => current?.close());
@@ -120,13 +120,12 @@ describe('hitscan combat', () => {
     assert.equal(b.hp, PLAYER.maxHealth);
   });
 
-  it('reloads to a full magazine after the reload time', async () => {
+  it('reloads to a full magazine after the reload time', () => {
     const { room, a } = setup();
     a.mags.set('rifle', 3);
     room.handleReload(a);
     assert.ok(a.reloadUntil > 0);
-    a.reloadUntil = performance.now() - 1;
-    await new Promise((r) => setTimeout(r, 40));
+    stepRoom(room, a.reloadUntil + 1);
     assert.equal(a.mag, WEAPONS.rifle.magazine);
     assert.equal(a.reloadUntil, 0);
   });

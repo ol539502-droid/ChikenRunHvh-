@@ -101,7 +101,7 @@ it('HvH bots fire through the normal queue, damage opponents and ignore teammate
   let now = performance.now() + 1;
   for (let tick = 0; tick < 64; tick++) {
     // The fixture advances simulation without waiting for wall-clock token refills.
-    (bot as unknown as {inputTokens: number}).inputTokens = 100;
+    bot.takeInputToken = () => true;
     stepRoom(room, now); now += SIM_DT * 1000;
   }
   assert.ok(events.some(e => e.event === 'shot' && (e.args[0] as ShotEvent).pid === bot.pid));
@@ -110,7 +110,7 @@ it('HvH bots fire through the normal queue, damage opponents and ignore teammate
   bot.fireQueue.length = 0; bot.resolver.clear();
   const accepted = bot.lastShotSeq;
   for (let tick = 0; tick < 32; tick++) {
-    (bot as unknown as {inputTokens: number}).inputTokens = 100;
+    bot.takeInputToken = () => true;
     stepRoom(room, now); now += SIM_DT * 1000;
   }
   assert.equal(bot.lastShotSeq, accepted, 'no enemy observations means no assisted friendly fire');

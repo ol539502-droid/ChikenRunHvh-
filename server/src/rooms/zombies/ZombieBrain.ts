@@ -1,6 +1,5 @@
 import {
   BLOCK_ID_BASE,
-  PLAYER,
   SIM_DT,
   ZOMBIE,
   buildNavGraph,
@@ -260,6 +259,3 @@ export class ZombieBrain {
     return false;
   }
 }
-
-/** A survivor's speed for reference: a zombie of speed 1 matches a running player. */
-export const FULL_SPEED = PLAYER.speed;

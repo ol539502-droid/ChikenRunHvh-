@@ -14,11 +14,6 @@ export function fakeLagTicks(core: HvhCoreSettings, seq: number, speed: number, 
   return clamp(ticks,0,limit);
 }
 
-export interface UserCommand extends InputFrame { clientTick: number; randomSeed: number; cameraYaw: number; attack: boolean; attack2: boolean }
-export function buildCommand(frame: InputFrame, clientTick = frame.seq): Readonly<UserCommand> {
-  return Object.freeze({ ...frame, clientTick, randomSeed: Math.imul(frame.seq, 0x45d9f3b) >>> 0,
-    cameraYaw: frame.yaw, attack: false, attack2: false });
-}
 /** Correct input axes when changing command angles; world movement intent stays identical. */
 export function correctMovement(frame: InputFrame, commandYaw: number): InputFrame {
   const x = -Math.sin(frame.yaw) * frame.forward + Math.cos(frame.yaw) * frame.right;

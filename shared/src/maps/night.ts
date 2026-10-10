@@ -1,38 +1,10 @@
-import { block, boxToAabb, crate, mirrored, type BoxKind, type MapBox, type MapDef } from './types';
+import { boxToAabb, crate, hut, mirrored, type MapBox, type MapDef } from './types';
 
 /**
  * Graveyard (Zombie Apocalypse): a walled night cemetery with a merchant's hut in the middle
  * where the survivors start, two crypts, rows of tombstones and low iron fences to hide behind.
  * Zombies come in from the edges. North is -Z.
  */
-
-type Side = 'n' | 's' | 'e' | 'w';
-const WALL = 0.35;
-const DOOR_WIDTH = 1.8;
-const DOOR_HEIGHT = 2.3;
-
-/** A hollow building: four walls with a doorway in each listed side, and a roof. */
-export function hut(cx: number, cz: number, w: number, d: number, h: number, doors: Side[], kind: BoxKind): MapBox[] {
-  const out: MapBox[] = [];
-  const wall = (side: Side) => {
-    const alongX = side === 'n' || side === 's';
-    const length = alongX ? w : d - 2 * WALL;
-    const fixed = side === 'n' ? cz - d / 2 + WALL / 2 : side === 's' ? cz + d / 2 - WALL / 2 : side === 'w' ? cx - w / 2 + WALL / 2 : cx + w / 2 - WALL / 2;
-    const centre = alongX ? cx : cz;
-    const piece = (from: number, to: number, y: number, height: number) => {
-      const mid = (from + to) / 2;
-      const len = to - from;
-      out.push(alongX ? block(kind, mid, fixed, len, height, WALL, y) : block(kind, fixed, mid, WALL, height, len, y));
-    };
-    if (!doors.includes(side)) return piece(centre - length / 2, centre + length / 2, 0, h);
-    piece(centre - length / 2, centre - DOOR_WIDTH / 2, 0, h);
-    piece(centre + DOOR_WIDTH / 2, centre + length / 2, 0, h);
-    piece(centre - DOOR_WIDTH / 2, centre + DOOR_WIDTH / 2, DOOR_HEIGHT, h - DOOR_HEIGHT);
-  };
-  (['n', 's', 'w', 'e'] as const).forEach(wall);
-  out.push(block('roof', cx, cz, w, 0.3, d, h));
-  return out;
-}
 
 const GRAVE_STONE = 0x8d9199;
 const stone = (x: number, z: number, w = 0.9, h = 1.3, d = 0.35): MapBox => ({ kind: 'stone', x, z, w, h, d, color: GRAVE_STONE });

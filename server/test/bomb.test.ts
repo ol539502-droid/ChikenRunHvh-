@@ -203,7 +203,7 @@ describe('the bomb', () => {
     let seq = 5000;
     const start = { x: carrier.state.x, z: carrier.state.z };
     for (let i = 0; i < Math.ceil((BOMB.plantMs + 400) / (SIM_DT * 1000)) && round(s.room).phase === 'live'; i++) {
-      (carrier as unknown as { inputTokens: number }).inputTokens = 100;
+      carrier.takeInputToken = () => true;
       s.room.handleInput(carrier, { seq: ++seq, forward: 1, right: 1, jump: true, yaw: 0, pitch: 0, use: true });
       s.step(SIM_DT * 1000);
       if (i === 5) assert.equal(carrier.state.crouching, true, 'crouched while planting');

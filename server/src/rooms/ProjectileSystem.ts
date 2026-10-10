@@ -5,6 +5,7 @@ import {
   SMOKE_DURATION_MS,
   blastFalloff,
   chestPoint,
+  directionFromAngles,
   makeRay,
   normalize,
   bodyScale,
@@ -185,8 +186,7 @@ export class ProjectileSystem {
       const dist = Math.hypot(dx, dy, dz);
       if (dist > FLASH.range) continue;
       if (dist > 0.3 && raycastWorld(makeRay(eye, { x: dx / dist, y: dy / dist, z: dz / dist }), this.room.world, dist - 0.2)) continue;
-      const c = Math.cos(target.pitch);
-      const ms = flashBlindMs(eye, { x: -Math.sin(target.lookYaw) * c, y: Math.sin(target.pitch), z: -Math.cos(target.lookYaw) * c }, at);
+      const ms = flashBlindMs(eye, directionFromAngles(target.lookYaw, target.pitch), at);
       if (ms <= 0) continue;
       target.blindUntil = Math.max(target.blindUntil, now + ms);
       target.socket?.emit('flashed', { ms, x: round(at.x, 2), y: round(at.y, 2), z: round(at.z, 2) });

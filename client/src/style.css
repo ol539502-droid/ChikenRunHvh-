@@ -4263,14 +4263,11 @@ code {
   font-family: var(--display);
   font-weight: 400;
   font-style: normal;
-  font-size: clamp(2.6rem, 5vw, 3.6rem);
   line-height: 0.9;
   letter-spacing: 0.03em;
 }
 .lobby .lobby-play-mode {
-  margin-top: 6px;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 0.85rem;
   font-weight: 800;
   opacity: 1;
   color: var(--barn-deep);
@@ -4293,10 +4290,6 @@ code {
 }
 
 /* The rest of the menu: small paper tags, so PLAY stays the focal point. */
-.lobby .lobby-nav {
-  gap: 6px;
-  width: auto;
-}
 .lobby .lobby-btn {
   width: auto;
   min-width: 190px;
@@ -4345,11 +4338,6 @@ code {
 }
 
 /* Today + what's new: two small tickets, below the menu, never over the chicken. */
-.lobby .lobby-cards {
-  width: min(330px, 100%);
-  gap: 8px;
-  align-self: flex-end;
-}
 .lobby .lobby-card {
   flex: 1 1 100%;
   padding: 9px 12px;

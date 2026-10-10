@@ -58,7 +58,7 @@ export function keyName(code: string): string {
 
 const label = (text: string, hint?: string) => h('div', { class: 'dev-label' }, h('span', null, text), hint ? h('small', null, hint) : null);
 
-export function renderControl(dev: Dev, c: Control): Rendered {
+export function renderControl(dev: Pick<Dev, 'get' | 'set' | 'click'>, c: Control, ranges = RANGES, choices = CHOICES): Rendered {
   const read = <T>(path: string | undefined, bind: Binding<T> | undefined): T => (bind ? bind.get() : (dev.get(path!) as T));
   const write = <T>(path: string | undefined, bind: Binding<T> | undefined, value: T) => {
     if (bind) bind.set(value);
@@ -79,7 +79,7 @@ export function renderControl(dev: Dev, c: Control): Rendered {
       return { el, refresh };
     }
     case 'slider': {
-      const range = c.path ? RANGES[c.path] : undefined;
+      const range = c.path ? ranges[c.path] : undefined;
       const min = c.min ?? range?.min ?? 0;
       const max = c.max ?? range?.max ?? 1;
       const step = c.step ?? range?.step ?? 0.01;
@@ -110,7 +110,7 @@ export function renderControl(dev: Dev, c: Control): Rendered {
       return { el, refresh };
     }
     case 'select': {
-      const options = c.options ?? (CHOICES[c.path!] ?? []).map((v) => ({ value: v, label: v[0]!.toUpperCase() + v.slice(1) }));
+      const options = c.options ?? (choices[c.path!] ?? []).map((v) => ({ value: v, label: v[0]!.toUpperCase() + v.slice(1) }));
       const select = h('select', { class: 'dev-select', 'aria-label': c.label }, ...options.map((o) => h('option', { value: o.value }, o.label)));
       select.addEventListener('change', () => {
         write(c.path, c.bind, select.value);

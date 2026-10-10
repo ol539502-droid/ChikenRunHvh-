@@ -1,9 +1,6 @@
-import { lerp, lerpAngle, MAX_REWIND_MS, type HvhMatrix } from '@game/shared';
+import { lerp, lerpAngle, MAX_REWIND_MS } from '@game/shared';
 
 export interface HistorySample {
-  tick?: number;
-  matrix?: HvhMatrix;
-  eyeYaw?: number;
   broken?: boolean;
   t: number;
   x: number;

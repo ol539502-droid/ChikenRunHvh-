@@ -25,8 +25,7 @@ import {
   makeRay,
   raycastWorld,
 } from '@game/shared';
-import type { GameServer } from '../types';
-import { GameRoom, type BotGoal, type RoomHooks, type RoomOptions } from './GameRoom';
+import { GameRoom, type BotGoal } from './GameRoom';
 import type { ServerPlayer } from './ServerPlayer';
 
 /** How close a chikenT person must be to take the bomb from a bot. */
@@ -54,13 +53,8 @@ export class BombRoom extends GameRoom {
   private state: RoundState = { phase: 'warmup', round: 0, endsAt: null, bomb: noBomb(), winner: 0, reason: null };
   /** Rounds lost in a row, per team (raises the loss bonus). */
   private lossStreak: [number, number] = [0, 0];
-  private plantedThisRound = false;
   /** The site chikenT bots go for this round. */
   private targetSite: BombSite | null = null;
-
-  constructor(io: GameServer, options: RoomOptions, hooks: RoomHooks) {
-    super(io, options, hooks);
-  }
 
   /** The current round (for tests and the client on joining). */
   get roundState(): RoundState {
@@ -72,7 +66,6 @@ export class BombRoom extends GameRoom {
   // ---------------------------------------------------------------------------
 
   protected override onMatchStart(now: number): void {
-    super.onMatchStart(now);
     this.lossStreak = [0, 0];
     for (const p of this.players.values()) {
       p.money = ECONOMY.max;
@@ -142,7 +135,6 @@ export class BombRoom extends GameRoom {
     }
     if (first) this.lossStreak = [0, 0];
     this.projectiles.clear();
-    this.plantedThisRound = false;
     const sites = this.map.bombSites ?? [];
     this.targetSite = sites[Math.floor(Math.random() * sites.length)] ?? null;
     const ts = [...this.players.values()].filter((p) => p.info.team === 1);
@@ -192,7 +184,7 @@ export class BombRoom extends GameRoom {
       if (p.info.team === winner) p.money += reason === 'exploded' || reason === 'defused' ? ECONOMY.bombWin : ECONOMY.win;
       else if (p.info.team === loser) {
         p.money += Math.min(ECONOMY.lossMax, ECONOMY.loss + ECONOMY.lossStep * this.lossStreak[loser - 1]);
-        if (loser === 1 && this.plantedThisRound) p.money += ECONOMY.plantedLoss;
+        if (loser === 1 && this.state.bomb.site !== null) p.money += ECONOMY.plantedLoss;
       }
       p.money = Math.min(ECONOMY.max, p.money);
     }
@@ -283,7 +275,6 @@ export class BombRoom extends GameRoom {
   }
 
   private plant(p: ServerPlayer, site: BombSite, now: number): void {
-    this.plantedThisRound = true;
     p.money = Math.min(ECONOMY.max, p.money + ECONOMY.plant);
     this.emitMoney(p);
     this.state = {
@@ -377,7 +368,6 @@ export class BombRoom extends GameRoom {
   }
 
   protected override onPlayerLeave(player: ServerPlayer): void {
-    super.onPlayerLeave(player);
     this.release(player);
     // FaceChiken: walking out of a match that's underway is a loss.
     if (this.phase === 'playing' && this.state.phase !== 'warmup') this.recordLeaver(player);

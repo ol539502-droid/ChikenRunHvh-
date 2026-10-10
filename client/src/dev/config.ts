@@ -1,4 +1,4 @@
-import { DEFAULT_MODS, MOD_LIMITS, WEAPON_IDS, defaultHvhCore, defaultHvhLoadout, type HvhLoadout, type DevMods, type WeaponId } from '@game/shared';
+import { DEFAULT_MODS, WEAPON_IDS, defaultHvhCore, defaultHvhLoadout, type HvhLoadout, type DevMods, type WeaponId } from '@game/shared';
 import { defaultLook, type WorldLook } from '../game/look';
 import { storage } from '../ui/dom';
 import { SKEET_GROUPS, defaultSkeetConfig, type SkeetConfig } from './skeet/model';
@@ -23,24 +23,6 @@ export interface DevConfig {
     invertKey: string;
   };
   legit: {
-    aim: {
-      enabled: boolean;
-      /** Degrees from the crosshair a target must be within. */
-      fov: number;
-      /** 1 = snappy, 20 = very gentle. */
-      smooth: number;
-      /** 0-100 % of the correction applied each frame. */
-      strength: number;
-      /** ms a target must stay in view before assist kicks in. */
-      reaction: number;
-      target: 'head' | 'body' | 'nearest';
-      visCheck: boolean;
-      teamCheck: boolean;
-      /** Hold-to-assist key; '' = always on. */
-      key: string;
-      whileFiring: boolean;
-      whileAds: boolean;
-    };
     trigger: { enabled: boolean; delay: number; fov: number; key: string; visCheck: boolean };
     move: { bhop: boolean; autoStrafe: boolean; assist: boolean; jumpAssist: boolean };
     /** See chickens through walls as a silhouette (only the hidden parts). */
@@ -57,21 +39,10 @@ export interface DevConfig {
       fov: number;
       autoTarget: boolean;
     };
-    weapon: { noRecoil: boolean; noSpread: boolean; infiniteAmmo: boolean; instantReload: boolean; rapidFire: boolean; automatic: boolean; infiniteMag: boolean; noRocketCooldown: boolean; noRocketDamage: boolean };
-    move: { speed: number; jump: number; fly: boolean; noclip: boolean; infiniteStamina: boolean; lowGravity: boolean };
-    antiAim: {
-      /** Spin bot: your chicken's body spins for everyone else; your view and aim don't. */
-      spin: boolean;
-      /** Degrees per second. */
-      speed: number;
-      direction: 'right' | 'left' | 'jitter';
-      /** Head tilt others see. */
-      pitch: 'normal' | 'down' | 'up';
-    };
   };
   /** Colours of the level, sky and light (local, visual only). */
   world: WorldLook;
-  weapons: { selected: WeaponId; fireRate: number; damage: number; recoil: number; spread: number; projectileSpeed: number; magazine: number };
+  weapons: { selected: WeaponId };
   visuals: {
     esp: { enabled: boolean; box: boolean; name: boolean; health: boolean; distance: boolean; weapon: boolean; skeleton: boolean; snaplines: boolean; headCircle: boolean; glow: boolean };
     world: { items: boolean; weapons: boolean; spawns: boolean; objectives: boolean; hitboxes: boolean; collision: boolean };
@@ -118,19 +89,15 @@ export function defaultConfig(panel: 'lab' | 'skeet' = 'lab'): DevConfig {
       feedback: { shotLog: true, targetInfo: true, resolver: true }, invertKey: 'KeyK',
     },
     legit: {
-      aim: { enabled: false, fov: 6, smooth: 8, strength: 60, reaction: 120, target: 'body', visCheck: true, teamCheck: true, key: '', whileFiring: false, whileAds: false },
       trigger: { enabled: false, delay: 120, fov: 1.5, key: '', visCheck: true },
       move: { bhop: false, autoStrafe: false, assist: false, jumpAssist: false },
       wall: { enabled: false, enemies: true, teammates: true, enemyColor: '#ff4d5e', teamColor: '#4dd2ff', opacity: 0.55 },
     },
     rage: {
       aim: { enabled: false, lock: true, silent: true, instantSwitch: false, priority: 'crosshair', hitbox: 'head', fov: 360, autoTarget: false },
-      weapon: { noRecoil: false, noSpread: false, infiniteAmmo: false, instantReload: false, rapidFire: false, automatic: false, infiniteMag: false, noRocketCooldown: false, noRocketDamage: false },
-      move: { speed: 1, jump: 1, fly: false, noclip: false, infiniteStamina: false, lowGravity: false },
-      antiAim: { spin: false, speed: 720, direction: 'right', pitch: 'normal' },
     },
     world: defaultLook(),
-    weapons: { selected: 'rifle', fireRate: 1, damage: 1, recoil: 1, spread: 1, projectileSpeed: 1, magazine: 1 },
+    weapons: { selected: 'rifle' },
     visuals: {
       esp: { enabled: false, box: true, name: true, health: true, distance: true, weapon: false, skeleton: false, snaplines: false, headCircle: false, glow: false },
       world: { items: false, weapons: false, spawns: false, objectives: false, hitboxes: false, collision: false },
@@ -182,23 +149,10 @@ export const RANGES: Record<string, { min: number; max: number; step: number }> 
   'hvh.antiAim.jitter': { min: 0, max: 45, step: 1 },
   'hvh.antiAim.jitterInterval': { min: 1, max: 600, step: 1 },
   'hvh.antiAim.spinSpeed': { min: 90, max: 540, step: 10 },
-  'legit.aim.fov': { min: 1, max: 30, step: 0.5 },
-  'legit.aim.smooth': { min: 1, max: 20, step: 0.5 },
-  'legit.aim.strength': { min: 0, max: 100, step: 1 },
-  'legit.aim.reaction': { min: 100, max: 350, step: 10 },
   'legit.trigger.delay': { min: 100, max: 500, step: 10 },
   'legit.trigger.fov': { min: 0.25, max: 10, step: 0.25 },
   'legit.wall.opacity': { min: 0.1, max: 1, step: 0.05 },
   'rage.aim.fov': { min: 1, max: 360, step: 1 },
-  'rage.antiAim.speed': { min: 60, max: 3600, step: 30 },
-  'rage.move.speed': { ...MOD_LIMITS.speed, step: 0.05 },
-  'rage.move.jump': { ...MOD_LIMITS.jump, step: 0.05 },
-  'weapons.fireRate': { ...MOD_LIMITS.fireRate, step: 0.05 },
-  'weapons.damage': { ...MOD_LIMITS.damage, step: 0.1 },
-  'weapons.recoil': { min: 0, max: 3, step: 0.05 },
-  'weapons.spread': { ...MOD_LIMITS.spread, step: 0.05 },
-  'weapons.projectileSpeed': { ...MOD_LIMITS.projectileSpeed, step: 0.05 },
-  'weapons.magazine': { ...MOD_LIMITS.magazine, step: 0.1 },
   'visuals.colors.opacity': { min: 0.1, max: 1, step: 0.05 },
   'world.clouds': { min: 0, max: 2, step: 0.05 },
   'world.fog': { min: 0.3, max: 3, step: 0.05 },
@@ -213,7 +167,6 @@ export const RANGES: Record<string, { min: number; max: number; step: number }> 
 /** Allowed values of the dropdowns. */
 export const CHOICES: Record<string, readonly string[]> = {
   'skeet.fakeLag.mode': ['static','velocity','random','adaptive','peek'],
-  'skeet.aimStyle': ['rage', 'legit'],
   'skeet.resolver.mode': ['adaptive', 'center'],
   'skeet.antiAim.jitterMode': ['center', 'offset', 'random', 'threeway'],
   'skeet.antiAim.desyncMode': ['static', 'alternate', 'sway'],
@@ -225,17 +178,13 @@ export const CHOICES: Record<string, readonly string[]> = {
   'hvh.exploit': ['off', 'doubleTap', 'hideShots'],
   'hvh.core.era': ['legacy', 'desync', 'tickbase', 'defensive'],
   'hvh.core.fakeLagMode': ['static', 'velocity', 'random', 'adaptive', 'peek'],
-  'legit.aim.target': ['head', 'body', 'nearest'],
   'rage.aim.priority': ['health', 'distance', 'crosshair'],
   'rage.aim.hitbox': ['head', 'body'],
-  'rage.antiAim.direction': ['right', 'left', 'jitter'],
-  'rage.antiAim.pitch': ['normal', 'down', 'up'],
   'weapons.selected': WEAPON_IDS,
   'settings.theme': ['claude', 'midnight', 'carbon', 'crimson', 'ocean'],
 };
 
 Object.assign(RANGES, {
-  'skeet.smoothing': { min: 1, max: 20, step: 1 },
   'skeet.resolver.history': { min: 4, max: 16, step: 1 },
   'skeet.resolver.memoryMs': { min: 300, max: 1200, step: 50 },
   'skeet.resolver.preferBodyBelow': { min: 0, max: 100, step: 1 },
@@ -310,17 +259,9 @@ export function sanitizeConfig(raw: unknown): DevConfig {
     out.skeet.fakeLag = {enabled:true,limit:core.fakeLag,mode:core.fakeLagMode,breakOnShot:core.fakeLagBreakOnShot};
   }
   out.skeet.antiAim = sanitizeSkeetAntiAim(out.skeet.antiAim);
-  const fresh = defaultConfig();
-  // Old exports remain readable, but retired powers never survive migration.
-  out.rage.weapon = fresh.rage.weapon;
-  out.rage.move = fresh.rage.move;
-  out.rage.antiAim = fresh.rage.antiAim;
-  out.weapons = { ...fresh.weapons, selected: out.weapons.selected };
   out.rage.aim.silent = true;
   out.rage.aim.instantSwitch = false;
-  out.skeet.aimStyle = 'rage';
-  out.legit.aim.enabled = false;
-  out.legit.aim.teamCheck = out.legit.aim.visCheck = out.legit.trigger.visCheck = true;
+  out.legit.trigger.visCheck = true;
   out.misc.freeCam = out.misc.spectator = false;
   out.world.wireframe = false;
   if (!out.settings.menuKey) out.settings.menuKey = 'Insert';

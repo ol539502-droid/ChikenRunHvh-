@@ -25,7 +25,7 @@ function tick(r: GameRoom, n: number): void {
 let seq = 1000;
 function input(r: GameRoom, p: ServerPlayer, frame: Partial<InputFrame>, times = 1): void {
   for (let i = 0; i < times; i++) {
-    (p as unknown as { inputTokens: number }).inputTokens = 100;
+    p.takeInputToken = () => true;
     r.handleInput(p, { seq: ++seq, forward: 0, right: 0, jump: false, yaw: 0, pitch: 0, ...frame });
     tick(r,1);
   }

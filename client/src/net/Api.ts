@@ -103,10 +103,6 @@ export class Api {
     return (await this.request<{ rows: LeaderboardRow[] }>('GET', mode ? `/api/leaderboard?mode=${mode}` : '/api/leaderboard')).rows;
   }
 
-  /** Coins changed in-game (match reward): update locally without a round trip. */
-  setCoins(total: number): void {
-    if (this.profile) this.setProfile({ ...this.profile, coins: total });
-  }
 
   /** After a match: the new coin and XP totals the server sent. */
   setRewards(coins: number, xp: number): void {

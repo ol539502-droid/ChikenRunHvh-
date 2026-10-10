@@ -108,3 +108,27 @@ export function crate(x: number, z: number, size = CRATE_SIZE, y = 0): MapBox {
 export function block(kind: BoxKind, x: number, z: number, w: number, h: number, d: number, y = 0): MapBox {
   return { kind, x, y, z, w, h, d };
 }
+
+/** Hollow walls with centered doorways; box order determines collision IDs. */
+export function hut(cx: number, cz: number, w: number, d: number, h: number, doors: readonly ('n' | 's' | 'e' | 'w')[], kind: BoxKind,
+  wallSize = 0.35, doorWidth = 1.8, doorHeight = 2.3): MapBox[] {
+  const out: MapBox[] = [];
+  for (const side of ['n', 's', 'w', 'e'] as const) {
+    const alongX = side === 'n' || side === 's';
+    const length = alongX ? w : d - 2 * wallSize;
+    const fixed = side === 'n' ? cz - d / 2 + wallSize / 2 : side === 's' ? cz + d / 2 - wallSize / 2 : side === 'w' ? cx - w / 2 + wallSize / 2 : cx + w / 2 - wallSize / 2;
+    const centre = alongX ? cx : cz;
+    const piece = (from: number, to: number, y: number, height: number) => {
+      const mid = (from + to) / 2, len = to - from;
+      out.push(alongX ? block(kind, mid, fixed, len, height, wallSize, y) : block(kind, fixed, mid, wallSize, height, len, y));
+    };
+    if (!doors.includes(side)) piece(centre - length / 2, centre + length / 2, 0, h);
+    else {
+      piece(centre - length / 2, centre - doorWidth / 2, 0, h);
+      piece(centre + doorWidth / 2, centre + length / 2, 0, h);
+      piece(centre - doorWidth / 2, centre + doorWidth / 2, doorHeight, h - doorHeight);
+    }
+  }
+  out.push(block('roof', cx, cz, w, 0.3, d, h));
+  return out;
+}

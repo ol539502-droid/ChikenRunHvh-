@@ -3,43 +3,13 @@ import { clamp, lerp, normalize, type Vec3 } from './math';
 import type { ProjectileKind } from './projectiles';
 import { mulberry32 } from './rng';
 
-export type WeaponId =
-  | 'pistol'
-  | 'rifle'
-  | 'shotgun'
-  | 'sniper'
-  | 'smg'
-  | 'minigun'
-  | 'rocket'
-  | 'golden'
-  | 'knife'
-  | 'pan'
-  | 'katana'
-  | 'mpistol'
-  | 'revolver'
-  | 'burst'
-  | 'battle'
-  | 'autoshotgun'
-  | 'lmg'
-  | 'scout'
-  | 'crossbow'
-  | 'launcher'
-  | 'goldknife'
-  | 'deagle'
-  | 'fiveseven'
-  | 'dualies'
-  | 'silenced'
-  | 'butterfly'
-  | 'karambit'
-  | 'm9'
-  | 'daggers';
-
 /** Index order is part of the network protocol (snapshots send the index). Only append. */
-export const WEAPON_IDS: readonly WeaponId[] = [
+export const WEAPON_IDS = [
   'pistol', 'rifle', 'shotgun', 'sniper', 'smg', 'minigun', 'rocket', 'golden', 'knife', 'pan', 'katana',
   'mpistol', 'revolver', 'burst', 'battle', 'autoshotgun', 'lmg', 'scout', 'crossbow', 'launcher', 'goldknife',
   'deagle', 'fiveseven', 'dualies', 'silenced', 'butterfly', 'karambit', 'm9', 'daggers',
-];
+] as const;
+export type WeaponId = typeof WEAPON_IDS[number];
 
 export type WeaponSound = 'pistol' | 'rifle' | 'shotgun' | 'sniper' | 'smg' | 'minigun' | 'rocket' | 'knife' | 'pan' | 'katana' | 'revolver' | 'battle' | 'lmg' | 'crossbow' | 'launcher' | 'deagle' | 'silenced';
 
@@ -92,6 +62,13 @@ export interface WeaponDef {
   model: { length: number; color: number; accent: number; barrels?: number };
 }
 
+const KNIFE: WeaponDef = {
+  id: 'knife', name: 'Knife', damage: 35, headshotMultiplier: 1.5, fireInterval: 420, automatic: true,
+  magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
+  range: 2.3, falloffStart: 2.3, minDamageScale: 1, zoom: 1, scope: false, recoil: 0.01,
+  melee: { arc: 0.6 }, price: 0, sound: 'knife', model: { length: 0.3, color: 0x2a2c31, accent: 0xd5dae2 },
+};
+
 const DEFS: WeaponDef[] = [
   {
     id: 'pistol', name: 'Pistol', damage: 24, headshotMultiplier: 2, fireInterval: 220, automatic: false,
@@ -142,12 +119,7 @@ const DEFS: WeaponDef[] = [
     price: 2500, sound: 'rifle', model: { length: 0.72, color: 0xe0b23a, accent: 0xa8801e },
   },
   // Melee: hold to keep swinging, no ammo. Movement obeys the same takeoff ceiling as guns.
-  {
-    id: 'knife', name: 'Knife', damage: 35, headshotMultiplier: 1.5, fireInterval: 420, automatic: true,
-    magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
-    range: 2.3, falloffStart: 2.3, minDamageScale: 1, zoom: 1, scope: false, recoil: 0.01,
-    melee: { arc: 0.6 }, price: 0, sound: 'knife', model: { length: 0.3, color: 0x2a2c31, accent: 0xd5dae2 },
-  },
+  KNIFE,
   {
     id: 'pan', name: 'Frying Pan', damage: 55, headshotMultiplier: 1.6, fireInterval: 800, automatic: true,
     magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
@@ -247,31 +219,19 @@ const DEFS: WeaponDef[] = [
     price: 400, sound: 'silenced', model: { length: 0.46, color: 0x3a3d42, accent: 0x15161a },
   },
   {
-    id: 'butterfly', name: 'Butterfly Knife', damage: 35, headshotMultiplier: 1.5, fireInterval: 420, automatic: true,
-    magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
-    range: 2.3, falloffStart: 2.3, minDamageScale: 1, zoom: 1, scope: false, recoil: 0.01,
-    melee: { arc: 0.6 },
+    ...KNIFE, id: 'butterfly', name: 'Butterfly Knife',
     price: 3000, sound: 'knife', model: { length: 0.3, color: 0x2b2d33, accent: 0xd5dae2 },
   },
   {
-    id: 'karambit', name: 'Karambit', damage: 35, headshotMultiplier: 1.5, fireInterval: 420, automatic: true,
-    magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
-    range: 2.3, falloffStart: 2.3, minDamageScale: 1, zoom: 1, scope: false, recoil: 0.01,
-    melee: { arc: 0.6 },
+    ...KNIFE, id: 'karambit', name: 'Karambit',
     price: 3500, sound: 'knife', model: { length: 0.26, color: 0x1f2a24, accent: 0xd5dae2 },
   },
   {
-    id: 'm9', name: 'M9 Bayonet', damage: 35, headshotMultiplier: 1.5, fireInterval: 420, automatic: true,
-    magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
-    range: 2.3, falloffStart: 2.3, minDamageScale: 1, zoom: 1, scope: false, recoil: 0.01,
-    melee: { arc: 0.6 },
+    ...KNIFE, id: 'm9', name: 'M9 Bayonet',
     price: 2500, sound: 'knife', model: { length: 0.36, color: 0x2e3a2c, accent: 0xd5dae2 },
   },
   {
-    id: 'daggers', name: 'Shadow Daggers', damage: 35, headshotMultiplier: 1.5, fireInterval: 420, automatic: true,
-    magazine: 1, reloadTime: 0, pellets: 1, spread: 0, moveSpread: 0, airSpread: 0,
-    range: 2.3, falloffStart: 2.3, minDamageScale: 1, zoom: 1, scope: false, recoil: 0.01,
-    melee: { arc: 0.6 },
+    ...KNIFE, id: 'daggers', name: 'Shadow Daggers',
     price: 1500, sound: 'knife', model: { length: 0.2, color: 0x24262b, accent: 0xd5dae2 },
   },
 ];

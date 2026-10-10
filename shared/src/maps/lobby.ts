@@ -1,5 +1,4 @@
-import { block, crate, type MapBox, type MapDef } from './types';
-import { hut } from './night';
+import { block, crate, hut, type MapBox, type MapDef } from './types';
 
 /**
  * Courtyard: the title screen's own map (no game mode uses it, so nobody can pick it). A sandstone
