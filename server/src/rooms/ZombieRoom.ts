@@ -46,6 +46,7 @@ const BOSS_NAMES = ['Rotten King', 'The Gravedigger', 'Mother Hen', 'Lord Drumst
 /** How each kind of zombie looks (the chicken skin and hat). */
 const LOOKS: Record<ZombieKind, Appearance> = {
   walker: { skin: 'zombie', hat: 'none', beak: 'black', shoes: 'none' },
+  sprinter: { skin: 'shadow', hat: 'none', beak: 'red', shoes: 'none' },
   runner: { skin: 'mint', hat: 'none', beak: 'red', shoes: 'none' },
   brute: { skin: 'shadow', hat: 'helmet', beak: 'black', shoes: 'black' },
   boss: { skin: 'lava', hat: 'devil', beak: 'black', shoes: 'black' },
@@ -288,20 +289,27 @@ export class ZombieRoom extends GameRoom {
   // Zombies
   // ---------------------------------------------------------------------------
 
-  /** A spot at the edge, a good way from every survivor. */
+  /**
+   * A spot anywhere on the map, a good way from every survivor; preferably not so far that the
+   * zombie takes ages to arrive (the map is big).
+   */
   private zombieSpawn(): { x: number; z: number } {
-    const survivors = this.survivors();
+    const alive = this.survivors().map((p) => ({ x: p.state.x, z: p.state.z }));
+    // Nobody standing right now (respawning): measure from where the survivors come back.
+    const refs = alive.length > 0 ? alive : this.map.spawns.filter((s) => s.team === 1);
     const spots = this.map.spawns.filter((s) => s.team === 2);
-    const far = spots.filter((s) => survivors.every((p) => Math.hypot(p.state.x - s.x, p.state.z - s.z) >= ZOMBIE.spawnMinDistance));
-    const pool = far.length > 0 ? far : spots;
+    const nearest = (s: { x: number; z: number }) => Math.min(...refs.map((p) => Math.hypot(p.x - s.x, p.z - s.z)));
+    const far = spots.filter((s) => nearest(s) >= ZOMBIE.spawnMinDistance);
+    const close = far.filter((s) => nearest(s) <= ZOMBIE.spawnMaxDistance);
+    const pool = close.length > 0 ? close : far.length > 0 ? far : spots;
     const spot = pool[Math.floor(Math.random() * pool.length)] ?? { x: 0, z: 0 };
-    return { x: spot.x + (Math.random() - 0.5) * 3, z: spot.z + (Math.random() - 0.5) * 3 };
+    return { x: spot.x + (Math.random() - 0.5) * 1.6, z: spot.z + (Math.random() - 0.5) * 1.6 };
   }
 
   private spawnZombie(kind: ZombieKind, now: number, near?: Vec3): ServerPlayer | null {
     const stats = zombieStats(kind, this.wave);
     const boss = kind === 'boss';
-    const title = boss ? `☠️ ${BOSS_NAMES[(bossNumber(this.wave) - 1) % BOSS_NAMES.length]}` : kind === 'brute' ? '🧟 Brute' : kind === 'runner' ? '🧟 Runner' : '🧟 Zombie';
+    const title = boss ? `☠️ ${BOSS_NAMES[(bossNumber(this.wave) - 1) % BOSS_NAMES.length]}` : kind === 'brute' ? '🧟 Brute' : kind === 'runner' ? '🧟 Runner' : kind === 'sprinter' ? '🧟 Sprinter' : '🧟 Zombie';
     const res = this.join(null, { userId: null, name: title, appearance: LOOKS[kind], loadout: ['knife'], bot: true, team: 2, rank: 1 });
     if (!res.ok) return null;
     const p = this.players.get(res.selfPid)!;
@@ -338,6 +346,8 @@ export class ZombieRoom extends GameRoom {
       nextSlam: now + ZOMBIE.boss.slam.everyMs,
       slamAt: 0,
       summoned: false,
+      sprintUntil: 0,
+      nextSprint: now + 1500,
       diedAt: null,
     });
     this.announcePlayer(p);

@@ -54,14 +54,16 @@ export function nightLook(): WorldLook {
     sandstone: '#8b8f9a',
     fence: '#6b7080',
     trees: '#4d5a58',
-    zenith: '#05070f',
-    horizon: '#141a26',
-    clouds: 0.25,
-    fog: 0.28,
-    sunColor: '#8aa0d8',
-    sunIntensity: 0.9,
-    ambient: 0.6,
-    exposure: 1.1,
+    // Moonless and misty: the fog starts at 12 m and hides everything past 35 m, except
+    // lanterns and zombie eyes.
+    zenith: '#020308',
+    horizon: '#0b0f17',
+    clouds: 0,
+    fog: 0.2,
+    sunColor: '#6f82b8',
+    sunIntensity: 0.35,
+    ambient: 0.32,
+    exposure: 1,
   };
 }
 

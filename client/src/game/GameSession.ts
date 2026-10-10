@@ -88,6 +88,8 @@ import { BuyMenu } from '../ui/BuyMenu';
 import type { Hud, ScoreLine } from '../ui/Hud';
 import { showJumpscare } from '../ui/Jumpscare';
 import { ZombieHud } from '../ui/ZombieHud';
+import { getKeybinds, keyLabel } from '../keybinds';
+import { ZombieNight } from './ZombieNight';
 import type { AudioEngine } from './Audio';
 import { Blocks } from './Blocks';
 import { BombView, type BombMode } from './BombView';
@@ -205,6 +207,7 @@ export class GameSession {
   private readonly buyMenu: BuyMenu | null;
   /** Zombie Apocalypse: the wave panel, shop and game-over screen. */
   private readonly zombieHud: ZombieHud | null;
+  private night: ZombieNight | null = null;
   /** Training: the weapon menu (B). */
   private readonly trainingMenu: TrainingMenu | null;
   private zombieOver = false;
@@ -304,7 +307,10 @@ export class GameSession {
         this.zombieHud.setState(join.zombie.state);
         this.zombieHud.setGear(join.zombie.gear);
       }
-      ctx.hud.toast('🧟 Survive! B opens the shop between waves, C builds a wall that lasts 10 seconds. Ctrl crouches.', 'info');
+      ctx.hud.toast(`🧟 Survive! B opens the shop between waves, C builds a wall that lasts 10 seconds. Ctrl crouches. ${keyLabel(getKeybinds().flashlight)} switches your flashlight.`, 'info');
+      // A darker HUD for the night, the flashlight and the sounds of the dark.
+      ctx.hud.root.classList.add('hud-zombie');
+      this.night = new ZombieNight(ctx.scene, ctx.camera, ctx.audio);
     }
     ctx.input.yaw = me.yaw;
     ctx.input.pitch = -0.15;
@@ -405,6 +411,7 @@ export class GameSession {
     const body = dev?.bodyAngles() ?? null;
     this.local.render(this.accumulator / SIM_DT, dt, body?.yaw ?? input.yaw, body?.pitch ?? input.pitch, seat);
     this.remotes.render(renderTime, dt);
+    this.night?.update(dt, this.remotes);
     for (const r of this.remotes.players.values()) {
       const v = r.latest?.vehicle;
       const remoteSeat = v ? this.vehicles.seatOf(v, new THREE.Vector3()) : null;
@@ -444,7 +451,8 @@ export class GameSession {
       this.rig.orbit(this.deathPos, dt);
       this.local.chicken.setBodyVisible(true);
     } else {
-      this.rig.overview(dt, this.ctx.world.map.halfSize);
+      // (At night the camera can't see far: circle the middle of the map, close in.)
+      this.rig.overview(dt, this.ctx.world.map.id === 'night' ? 22 : this.ctx.world.map.halfSize);
     }
     const cam = this.ctx.camera;
     audio.setListener(cam.position.x, cam.position.y, cam.position.z, input.yaw);
@@ -600,6 +608,9 @@ export class GameSession {
     switch (action) {
       case 'reload':
         this.startReload(now);
+        break;
+      case 'flashlight':
+        this.night?.toggleFlashlight();
         break;
       case 'slot1':
       case 'slot2':
@@ -1730,6 +1741,8 @@ export class GameSession {
     this.bombView?.dispose();
     this.buyMenu?.dispose();
     this.zombieHud?.dispose();
+    this.night?.dispose();
+    this.ctx.hud.root.classList.remove('hud-zombie');
     this.trainingMenu?.dispose();
     this.ctx.input.zombieMode = false;
     this.local.dispose();

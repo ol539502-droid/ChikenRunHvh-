@@ -24,6 +24,8 @@ const HEMI_WITH_ENV = 0.55;
 const HEMI_ALONE = 1.8;
 const FOG_NEAR = 60;
 const FOG_FAR = 175;
+/** Real lights shared by the map's lanterns (the nearest ones get them). */
+const LAMP_LIGHTS = 3;
 const WINDOW = { width: 1.0, height: 0.95, sill: 1.3, spacing: 2.6, frame: 0.07 };
 
 export interface ShadowOptions {
@@ -74,6 +76,7 @@ export class World {
     this.addLights();
     this.addGround();
     this.addBoxes();
+    this.addLamps();
     if (this.map.id === 'farm') {
       this.addArenaMarkings();
       this.addFarmScenery();
@@ -205,10 +208,81 @@ export class World {
     return m;
   }
 
-  update(dt: number): void {
+  update(dt: number, camera?: THREE.Vector3): void {
     this.foliage?.update(dt);
     this.yard?.update(dt);
     this.windmillRotor.rotation.z -= dt * 0.22;
+    if (camera && this.lampLights.length > 0) this.updateLamps(dt, camera);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lamps (the Graveyard): lanterns that glow through the fog, and a few real lights that go to
+  // the lanterns nearest the camera. They flicker slowly and only a little (never a strobe).
+  // ---------------------------------------------------------------------------
+
+  private readonly lamps: { at: THREE.Vector3; color: number; fire: boolean; phase: number }[] = [];
+  private readonly lampLights: { light: THREE.PointLight; lamp: number; fade: number }[] = [];
+  private lampTime = 0;
+  private lampCheck = 0;
+
+  private addLamps(): void {
+    const lamps = this.map.lamps ?? [];
+    if (lamps.length === 0) return;
+    const lantern = this.track(new THREE.BoxGeometry(0.2, 0.28, 0.2));
+    const cap = this.track(new THREE.BoxGeometry(0.28, 0.06, 0.28));
+    const flame = this.track(new THREE.ConeGeometry(0.32, 0.75, 7));
+    const iron = this.track(new THREE.MeshStandardMaterial({ color: 0x1c1d20, roughness: 0.7 }));
+    lamps.forEach((l, i) => {
+      const glow = this.track(new THREE.MeshBasicMaterial({ color: new THREE.Color(l.color).multiplyScalar(l.fire ? 1.6 : 1.3), fog: false }));
+      if (l.fire) {
+        for (const [dx, dz, s] of [[0, 0, 1], [0.18, 0.1, 0.65], [-0.15, -0.12, 0.7]] as const) {
+          const f = new THREE.Mesh(flame, glow);
+          f.position.set(l.x + dx, l.y + 0.3 * s, l.z + dz);
+          f.scale.setScalar(s);
+          this.root.add(f);
+        }
+      } else {
+        const glass = new THREE.Mesh(lantern, glow);
+        glass.position.set(l.x, l.y, l.z);
+        const top = new THREE.Mesh(cap, iron);
+        top.position.set(l.x, l.y + 0.17, l.z);
+        this.root.add(glass, top);
+      }
+      this.lamps.push({ at: new THREE.Vector3(l.x, l.y + (l.fire ? 0.6 : 0), l.z), color: l.color, fire: !!l.fire, phase: i * 2.17 });
+    });
+    for (let i = 0; i < Math.min(LAMP_LIGHTS, lamps.length); i++) {
+      const light = new THREE.PointLight(0xffffff, 0, 13, 2);
+      this.root.add(light);
+      this.lampLights.push({ light, lamp: -1, fade: 0 });
+    }
+  }
+
+  private updateLamps(dt: number, camera: THREE.Vector3): void {
+    this.lampTime += dt;
+    this.lampCheck -= dt;
+    if (this.lampCheck <= 0) {
+      // The lanterns nearest the camera get the real lights (a few times a second).
+      this.lampCheck = 0.3;
+      const nearest = this.lamps.map((l, i) => ({ i, d: l.at.distanceToSquared(camera) })).sort((a, b) => a.d - b.d).slice(0, this.lampLights.length).map((x) => x.i);
+      const free = this.lampLights.filter((s) => !nearest.includes(s.lamp));
+      for (const i of nearest) {
+        if (this.lampLights.some((s) => s.lamp === i)) continue;
+        const slot = free.pop()!;
+        slot.lamp = i;
+        slot.fade = 0;
+        slot.light.position.copy(this.lamps[i]!.at);
+        slot.light.color.setHex(this.lamps[i]!.color);
+      }
+    }
+    const t = this.lampTime;
+    for (const s of this.lampLights) {
+      const lamp = this.lamps[s.lamp];
+      if (!lamp) continue;
+      s.fade = Math.min(1, s.fade + dt * 2);
+      // Two slow waves (under half a flicker a second), at most a fifth dimmer: a soft waver.
+      const waver = 0.88 + 0.08 * Math.sin(t * (lamp.fire ? 2.6 : 1.7) + lamp.phase) + 0.04 * Math.sin(t * 2.9 + lamp.phase * 1.7);
+      s.light.intensity = (lamp.fire ? 14 : 9) * waver * s.fade;
+    }
   }
 
   private track<T extends { dispose(): void }>(thing: T): T {

@@ -3,6 +3,66 @@
 Working notes, one batch of work at a time (newest first). Each batch has its plan, what was done
 for each step, and a log of every mistake made along the way (what went wrong, and how it was fixed).
 
+# Batch 13 (10 Oct): darker, scarier Zombie mode on a bigger map
+
+## Plan
+
+| Step | What | Where |
+| --- | --- | --- |
+| Z-A | Graveyard map 2x bigger (88 m half-size): old graveyard in the middle inside a stone wall with gates, an abandoned farm with a barn and silo, a cornfield of tall crops, narrow brick alleys, an open meadow with a campfire; lamps | shared/src/maps/night.ts, types.ts |
+| Z-B | Zombie spawns spread over the whole map, never close to a survivor | server ZombieRoom.zombieSpawn |
+| Z-C | Pathfinding from wave 1, nav graph built once per map, cheap nearest-waypoint lookup on the big map | ZombieBrain, shared/src/nav.ts |
+| Z-D | Sprinter zombie: slow, then short sprint bursts | shared/src/zombies.ts, ZombieBrain, ZombieRoom |
+| Z-E | Zombie look: dark torn feathers, glowing eyes seen through fog | client Chicken / RemotePlayer |
+| Z-F | Night: darker sky and light, thick fog, camera stops drawing past the fog, slow subtle flickering lamps, flashlight on T (rebindable) | look.ts, World.ts, Game.ts, keybinds, Input, GameSession |
+| Z-G | Sounds: groans louder when closer, footsteps, a screech when one spots you, wind, distant clucks and creaks (all soft) | client Audio.ts, GameSession |
+| Z-H | Darker HUD and scoreboard in Zombie mode | CSS |
+| Z-I | Tests: map loads, nav reaches everywhere, spawns spread and far, zombies reach players; browser: flashlight, FPS | server/test, headless Chrome |
+
+## What was done
+
+- **Z-A, map** ([shared/src/maps/night.ts](shared/src/maps/night.ts)): 88 m half-size (was 44: 4x the area). The old graveyard is the middle, now inside a 2.2 m stone wall with a 5 m gate on each side (the choke points). Around it: a cornfield (NW, 2.6 m tall rows, 2.8 m aisles, 3 lanes across), the farm (NE: red barn with big doors and hay bales inside, farmhouse, silo, tractor, broken paddock), a village of 3 m alleys with houses you can enter (SW), a chapel with old graves (S), dead trees and a tool shed (E/W), and the open meadow with a campfire (SE, the "safe-feeling" spot). 298 boxes. 12 lamps (`MapDef.lamps`, new optional field, looks only).
+- **Waypoints:** the 8 m grid plus a point inside and outside every doorway (`house()` records them) and both sides of each gate. All 504 connect (test). Rows, aisles and alleys sit on the grid lines so routes go through them.
+- **Z-B, spawns** ([ZombieRoom.zombieSpawn](server/src/rooms/ZombieRoom.ts)): any waypoint more than 16 m from the hut; at least 24 m from every survivor and, when possible, at most 55 m from the nearest (`ZOMBIE.spawnMaxDistance`), so they come from every direction without a long walk. With nobody standing, it measures from the survivor spawns.
+- **Z-C, pathfinding** ([ZombieBrain](server/src/rooms/zombies/ZombieBrain.ts), [nav.ts](shared/src/nav.ts)): waypoints from wave 1 (was 3; the walls need it). The graph is built once per map over the map's own boxes (~150 ms at server start of the first zombie room), not per room over a world that may hold player-built blocks. Zombies skip ahead to a waypoint they can already walk straight to (no corner-cutting into gate posts). `nearestNavPoint` checks nearest first and stops at the first walkable one: same answer as before, far fewer raycasts (bots in other modes get the same result).
+- **Z-D, sprinter** ([shared/src/zombies.ts](shared/src/zombies.ts)): from wave 2 (18% of a wave). Shambles at 0.45, sprints at 1.3 for 0.9 s every 1.8–3.2 s when within 30 m. Starting a sprint within 7 m it leaps at you (the "jumps from the dark").
+- **Z-E, looks** ([Chicken.setAppearance](client/src/game/models/Chicken.ts)): zombies get a torn feather texture (rot blotches, bare patches, tears), feathers at about a third of the brightness, dead grey legs, a dried comb, no team scarf, and glowing eyes (acid green: walkers and runners; red: sprinters, brutes, bosses) that ignore fog.
+- **Z-F, atmosphere:**
+  - Night look: darker sky, moonlight 0.35, ambient 0.32, fog from 12 m to 35 m, no clouds ([look.ts](client/src/game/look.ts)).
+  - The camera stops drawing at 48 m on this map (the sky dome shrinks to fit, the far hills hide). Grass is a third as dense there. The gun in your hands is lit to match the night ([Game.ts](client/src/game/Game.ts), [Sky.ts](client/src/game/Sky.ts)).
+  - Lamps ([World.ts](client/src/game/World.ts)): lanterns glow through the fog; 3 real lights move to the nearest ones and fade in; flicker is two slow waves (under 0.5 Hz), at most 20% dimmer.
+  - Flashlight ([ZombieNight.ts](client/src/game/ZombieNight.ts)): **T** (F is Inspect), rebindable in Settings › Keys, on at the start. The light stays in the scene and only dims, so switching never rebuilds shaders.
+- **Z-G, sounds** ([Audio.ts](client/src/game/Audio.ts), [ZombieNight.ts](client/src/game/ZombieNight.ts)): groans every 3.5–8.5 s per zombie within 42 m (normal distance falloff makes them louder as they come), footsteps within 20 m (faster for sprinters), one screech when a zombie first comes within 18 m. Caps: one screech per 2.5 s, one groan per 0.6 s. Wind gusts all the time, a distant cluck every 10–24 s, wood creaking every 7–17 s. All are softer than gunfire.
+- **Z-H, UI:** the HUD panels and scoreboard are a bit darker in this mode (`hud-zombie`). The welcome toast and the F1 guide mention the flashlight key.
+- **Not changed:** other modes, maps, HvH cheats, dev mode. The flashlight is yours only: other players don't see your light.
+
+## Tests
+
+- New server tests ([server/test/zombie.test.ts](server/test/zombie.test.ts)):
+  - The map is 2x wider and every waypoint is reachable.
+  - Spawns from 4 places (hut, barn, village street, meadow) are 24–55 m away and come from several directions; with nobody alive they stay near the survivor spawns.
+  - A walker teleported to the far village finds a survivor hiding in the barn (about 55 s of game time).
+  - Sprinters burst and slow down again; sprinters come from wave 2.
+- Full run: typecheck clean, **429/429 tests pass**, build OK.
+- Browser (headless Chrome):
+  - On the GPU: the map loads (88 m, view 48 m, fog 12–35 m), the flashlight goes 22 → 0 → 22 with T, zombies spawn 24–49 m out and reach the player within 15 s, 180 fps (the cap).
+  - With CPU-only rendering on Low (a harsh stand-in for a weak PC): night map 16–54 fps vs 11–22 fps on the normal Farm map with the same setup. The fog cut-off more than pays for the lights.
+  - Screenshots: a zombie at 18 m is a dark shape with glowing eyes in the fog.
+  - All 6 new sounds play and free their audio nodes. No page errors.
+
+## Mistakes log
+
+| # | Mistake | Fix |
+| --- | --- | --- |
+| 1 | Shell heredocs carrying Python edits broke twice (quote mismatch; once `cat >` waited on input and hung the shell for 2 min). | Used the file editor and small `python -c` edits instead. |
+| 2 | First map draft: two waypoints were inside closed houses, so they couldn't be reached. | Waypoints inside and outside every door (`house()`). |
+| 3 | Zombies stalled at the cemetery gates and on tree corners: waypoints were off the gate line, and they turned toward the next waypoint 2 m early, clipping posts. | Gate waypoints; skip to the next waypoint only when it is in a straight walkable line. |
+| 4 | The cemetery wall corners overlapped (the map test caught it). | East/west wall pieces fit between the north/south ones. |
+| 5 | Sprint speed set by spreading `p.mods`, which can be null (typecheck caught it). | `sanitizeMods` like the room does. |
+| 6 | First zombie look was still cute: bright orange legs and comb, a blue team scarf, pale eyes. The night clouds were too bright. | Dead legs and comb, no scarf, darker feathers, acid green or red eyes; no clouds at night. |
+| 7 | One browser run spawned zombies 100 m out: the player wasn't alive yet when the wave began, so there was nobody to measure from. | Measure from the survivor spawns then (test added). |
+| 8 | Stopping the background dev server and Vite left orphan node processes on ports 3000 and 5176 (known issue). | Killed them by PID after checking their start time. |
+
 # Batch 12 (10 Oct): security check, and an F1 guide
 
 ## Security audit (whole game)

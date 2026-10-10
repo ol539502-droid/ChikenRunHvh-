@@ -1,14 +1,17 @@
 import {
   BLOCK_ID_BASE,
+  DEFAULT_MODS,
   SIM_DT,
   ZOMBIE,
   buildNavGraph,
+  createCollisionWorld,
   chestPoint,
   clamp,
   eyeHeightOf,
   findPath,
   makeRay,
   raycastWorld,
+  sanitizeMods,
   walkable,
   wrapAngle,
   type CollisionWorld,
@@ -55,6 +58,9 @@ export interface Zombie {
   nextSlam: number;
   slamAt: number;
   summoned: boolean;
+  /** Sprinter: the burst in progress ends at `sprintUntil`; the next may start at `nextSprint`. */
+  sprintUntil: number;
+  nextSprint: number;
   /** When it died (to remove the body after a moment). */
   diedAt: number | null;
 }
@@ -77,15 +83,28 @@ export interface ZombieHost {
 }
 
 /**
- * Zombie behaviour. Wave 1–2: walk straight at the nearest survivor, steering round things.
- * From wave 3: when a wall is in the way, follow waypoints round it. From wave 6: some zombies
- * circle round to come from the side. Bosses slam the ground. Anything blocking the way that a
- * survivor built gets attacked.
+ * Waypoint graphs, one per map, linked over the map's own boxes only (blocks the survivors
+ * build come and go; zombies chew through those). Built once, on the first room of the map.
+ */
+const NAV_GRAPHS = new Map<MapDef['id'], NavGraph | null>();
+
+function navGraph(map: MapDef): NavGraph | null {
+  if (!NAV_GRAPHS.has(map.id)) NAV_GRAPHS.set(map.id, map.nav ? buildNavGraph(map.nav, createCollisionWorld(map)) : null);
+  return NAV_GRAPHS.get(map.id)!;
+}
+
+/**
+ * Zombie behaviour. Walk at the nearest survivor, steering round things; when a wall is in the
+ * way, follow waypoints round it. From wave 6: some zombies circle round to come from the side.
+ * Sprinters shamble, then sprint in short bursts when close. Bosses slam the ground. Anything
+ * blocking the way that a survivor built gets attacked.
  */
 export class ZombieBrain {
-  private nav: NavGraph | null = null;
+  private readonly nav: NavGraph | null;
 
-  constructor(private readonly host: ZombieHost) {}
+  constructor(private readonly host: ZombieHost) {
+    this.nav = navGraph(host.map);
+  }
 
   update(z: Zombie, now: number): void {
     const p = z.p;
@@ -112,6 +131,7 @@ export class ZombieBrain {
     if (z.kind === 'boss') {
       frozen = this.boss(z, dist, now);
     }
+    if (z.kind === 'sprinter') this.sprint(z, dist, now);
 
     if (now >= z.nextThink) {
       z.nextThink = now + THINK_MS;
@@ -213,9 +233,8 @@ export class ZombieBrain {
       }
     }
 
-    // From wave 3: with a wall in the way, follow waypoints round it.
+    // With a wall in the way, follow waypoints round it.
     if (z.wave >= ZOMBIE.smart.pathFromWave && !walkable(from, goal, this.host.world)) {
-      this.nav ??= this.host.map.nav ? buildNavGraph(this.host.map.nav, this.host.world) : null;
       if (this.nav) {
         const moved = !z.pathTarget || Math.hypot(z.pathTarget.x - goal.x, z.pathTarget.z - goal.z) > 3;
         if (moved || now >= z.nextPath || z.path.length === 0) {
@@ -223,7 +242,8 @@ export class ZombieBrain {
           z.pathTarget = goal;
           z.nextPath = now + PATH_MS;
         }
-        while (z.path.length > 1 && Math.hypot(z.path[0]!.x - from.x, z.path[0]!.z - from.z) < 2) z.path.shift();
+        // Reached a waypoint, or the next one is already in a straight line: on to the next.
+        while (z.path.length > 1 && (Math.hypot(z.path[0]!.x - from.x, z.path[0]!.z - from.z) < 1 || walkable(from, z.path[1]!, this.host.world))) z.path.shift();
         goal = z.path[0] ?? goal;
       }
     } else {
@@ -234,6 +254,21 @@ export class ZombieBrain {
     const gz = goal.z - from.z;
     const gl = Math.hypot(gx, gz) || 1;
     return { x: gx / gl, z: gz / gl };
+  }
+
+  /** Sprinter: a burst of speed now and then, when close enough to see its prey. */
+  private sprint(z: Zombie, dist: number, now: number): void {
+    const s = ZOMBIE.sprint;
+    const sprinting = now < z.sprintUntil;
+    if (!sprinting && now >= z.nextSprint && dist < s.within && dist > z.stats.reach) {
+      z.sprintUntil = now + s.burstMs;
+      z.nextSprint = z.sprintUntil + s.restMs[0] + Math.random() * (s.restMs[1] - s.restMs[0]);
+      z.p.mods = sanitizeMods({ speed: s.speed }, DEFAULT_MODS);
+      // Close already: it leaps out of the dark at you.
+      if (dist < s.leapWithin) z.jumpTicks = 8;
+    } else if (!sprinting && z.p.mods?.speed !== z.stats.speed) {
+      z.p.mods = sanitizeMods({ speed: z.stats.speed }, DEFAULT_MODS);
+    }
   }
 
   /** Boss behaviour. Returns true while it should stand still (the slam winding up). */

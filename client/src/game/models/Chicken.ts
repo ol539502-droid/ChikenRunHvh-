@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CHICKEN_POSE, chickenHeadPose, bodyScale, PLAYER, TEAM_COLORS, clamp, damp, getItem, type Appearance, type Team, type WeaponId } from '@game/shared';
+import { CHICKEN_POSE, chickenHeadPose, bodyScale, PLAYER, TEAM_COLORS, clamp, damp, getItem, type Appearance, type Team, type WeaponId, type ZombieKind } from '@game/shared';
 import { buildGun, type GunModel } from './Guns';
 import { buildHat } from './Hats';
 import { box, cone, cylinder, part, solid, sphere } from './materials';
@@ -102,8 +102,10 @@ const MAT = {
  * the body reads as feathered up close and stays clean far away. One texture, tinted per skin.
  */
 let featherTexture: THREE.CanvasTexture | null = null;
-function feathers(): THREE.CanvasTexture {
-  if (featherTexture) return featherTexture;
+let tornTexture: THREE.CanvasTexture | null = null;
+function feathers(torn = false): THREE.CanvasTexture {
+  if (featherTexture && !torn) return featherTexture;
+  if (tornTexture && torn) return tornTexture;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
@@ -118,23 +120,57 @@ function feathers(): THREE.CanvasTexture {
       ctx.stroke();
     }
   }
-  featherTexture = new THREE.CanvasTexture(canvas);
-  featherTexture.wrapS = featherTexture.wrapT = THREE.RepeatWrapping;
-  featherTexture.repeat.set(3, 2.5);
-  featherTexture.colorSpace = THREE.SRGBColorSpace;
-  return featherTexture;
+  if (torn) {
+    // Zombies: rotten blotches, bare patches and ragged tears.
+    for (let i = 0; i < 26; i++) {
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(150, 120, 115, 0.55)' : 'rgba(25, 15, 12, 0.45)';
+      ctx.beginPath();
+      ctx.ellipse(Math.random() * 128, Math.random() * 128, 3 + Math.random() * 9, 2 + Math.random() * 6, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(15, 8, 6, 0.6)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 14; i++) {
+      const x = Math.random() * 128, y = Math.random() * 128;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (Math.random() - 0.5) * 6, y + 6 + Math.random() * 10);
+      ctx.lineTo(x + (Math.random() - 0.5) * 8, y + 14 + Math.random() * 10);
+      ctx.stroke();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(3, 2.5);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  if (torn) tornTexture = texture;
+  else featherTexture = texture;
+  return texture;
 }
 const featherCache = new Map<string, THREE.MeshStandardMaterial>();
 /** A skin's feather material; `shade` darkens it (wings and sickle feathers). */
-function featherMaterial(color: number, metal = false, shade = 1): THREE.MeshStandardMaterial {
-  const key = `${color}:${metal}:${shade}`;
+function featherMaterial(color: number, metal = false, shade = 1, torn = false): THREE.MeshStandardMaterial {
+  const key = `${color}:${metal}:${shade}:${torn}`;
   let m = featherCache.get(key);
   if (!m) {
-    const tex = feathers();
+    const tex = feathers(torn);
     m = new THREE.MeshStandardMaterial({ color: new THREE.Color(color).multiplyScalar(shade), map: tex, bumpMap: tex, bumpScale: 1,
       roughness: metal ? 0.3 : 0.88, metalness: metal ? 0.75 : 0.02 });
     featherCache.set(key, m);
   }
+  return m;
+}
+
+/** Zombie eyes: they glow, and fog doesn't hide them (you see the eyes before the zombie). */
+const UNDEAD = {
+  legs: solid(0x5a5236, { flat: false, roughness: 0.8 }),
+  red: solid(0x4a1510, { flat: false, roughness: 0.7 }),
+};
+const zombieEyes = new Map<string, THREE.MeshBasicMaterial>();
+function zombieEye(kind: ZombieKind): THREE.MeshBasicMaterial {
+  const color = kind === 'walker' || kind === 'runner' ? 0xaaff00 : 0xff2200;
+  let m = zombieEyes.get(kind);
+  if (!m) zombieEyes.set(kind, (m = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.2), fog: false })));
   return m;
 }
 
@@ -200,6 +236,8 @@ export class Chicken {
   private readonly scarfTails: THREE.Mesh[] = [];
   private readonly featherMeshes: THREE.Mesh[] = [];
   private readonly wingMeshes: THREE.Mesh[] = [];
+  private readonly eyeWhites: THREE.Mesh[] = [];
+  private readonly pupils: THREE.Mesh[] = [];
   private hat: THREE.Group | null = null;
   private gun: GunModel | null = null;
   private gunId: WeaponId | null = null;
@@ -264,7 +302,11 @@ export class Chicken {
       eye.scale.set(1.05, 1.12, 1);
       const brow = part(GEO.brow, MAT.pupil, side * 0.135, 1.377, -0.533);
       brow.rotation.z = side * 0.22;
-      eyes.push(eye, part(GEO.pupil, MAT.pupil, side * 0.15, 1.315, -0.553), part(GEO.glint, MAT.eye, side * 0.15 - 0.01, 1.327, -0.579), brow);
+      const pupil = part(GEO.pupil, MAT.pupil, side * 0.15, 1.315, -0.553);
+      const glint = part(GEO.glint, MAT.eye, side * 0.15 - 0.01, 1.327, -0.579);
+      this.eyeWhites.push(eye);
+      this.pupils.push(pupil, glint);
+      eyes.push(eye, pupil, glint, brow);
     }
     const comb = part(GEO.comb, MAT.red);
     this.combs.push(comb);
@@ -344,18 +386,34 @@ export class Chicken {
     this.setTeam(team);
   }
 
+  private team: Team = 0;
+  private undead: ZombieKind | undefined;
   private xrayMaterial: THREE.Material | null | undefined;
   private chamsMaterial: THREE.Material | null = null;
   private readonly originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
-  setAppearance(a: Appearance): void {
+  /** `undead`: a zombie of that kind (darker, torn feathers and glowing eyes). */
+  setAppearance(a: Appearance, undead?: ZombieKind): void {
     this.setChams(null);
     this.xrayMaterial = undefined;
     const skin = getItem('skin', a.skin) ?? getItem('skin', 'white')!;
-    const feather = featherMaterial(skin.color ?? 0xffffff, skin.metal);
-    const wing = featherMaterial(skin.color ?? 0xffffff, skin.metal, 0.86);
+    const torn = undead !== undefined;
+    const feather = featherMaterial(skin.color ?? 0xffffff, skin.metal, torn ? 0.36 : 1, torn);
+    const wing = featherMaterial(skin.color ?? 0xffffff, skin.metal, torn ? 0.3 : 0.86, torn);
     for (const m of this.featherMeshes) m.material = feather;
     for (const m of this.wingMeshes) m.material = wing;
+    for (const e of this.eyeWhites) e.material = undead ? zombieEye(undead) : MAT.eye;
+    for (const p of this.pupils) p.visible = !torn;
+    if (torn !== (this.undead !== undefined)) {
+      // Zombies: grey-yellow dead legs, a dark, dried comb and wattles.
+      this.pose.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.material === MAT.legs || m.material === UNDEAD.legs) m.material = torn ? UNDEAD.legs : MAT.legs;
+        else if (m.material === MAT.red || m.material === UNDEAD.red) m.material = torn ? UNDEAD.red : MAT.red;
+      });
+    }
+    this.undead = undead;
+    this.setTeam(this.team);
 
     const beak = getItem('beak', a.beak) ?? getItem('beak', 'orange')!;
     const beakMaterial = solid(beak.color ?? 0xf5a623, { metal: beak.metal, flat: false, roughness: 0.45 });
@@ -379,8 +437,10 @@ export class Chicken {
   }
 
   setTeam(team: Team): void {
+    this.team = team;
     for (const cloth of [this.scarf, ...this.scarfTails]) {
-      cloth.visible = team !== 0;
+      // Zombies wear no team scarf.
+      cloth.visible = team !== 0 && !this.undead;
       if (team !== 0) cloth.material = solid(TEAM_COLORS[team]);
     }
   }

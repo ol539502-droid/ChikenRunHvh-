@@ -148,6 +148,12 @@ export class Sky {
     return scene;
   }
 
+  /** The camera only draws `far` metres: the dome shrinks inside that, and the hills past it hide. */
+  setReach(far: number): void {
+    this.dome.scale.setScalar(Math.min(1, (far * 0.9) / DOME_RADIUS));
+    for (const o of this.root.children) if (o !== this.dome) o.visible = far > DOME_RADIUS;
+  }
+
   /** The title screen's sky: grain and horizon haze on (it has painted clouds of its own). */
   setTitle(on: boolean): void {
     this.title = on;

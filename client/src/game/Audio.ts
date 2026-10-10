@@ -41,7 +41,13 @@ export type SoundName =
   | 'heartbeat'
   | 'giggle'
   | 'sniperZoom'
-  | 'equip';
+  | 'equip'
+  | 'groan'
+  | 'zstep'
+  | 'screech'
+  | 'wind'
+  | 'cluck'
+  | 'creak';
 
 const VOLUME_KEY = 'chikengun:volume';
 const MUSIC_KEY = 'chikengun:music-volume';
@@ -448,10 +454,81 @@ export class AudioEngine {
     }
   }
 
+  /** A throaty voice: a sawtooth through a low formant, sliding down, with a slow wobble. */
+  private growl(ctx: AudioContext, out: AudioNode, t: number, o: { freq: number; end: number; dur: number; gain: number; formant: number; q?: number; wobble?: number; delay?: number }): void {
+    const start = t + (o.delay ?? 0);
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(o.freq, start);
+    osc.frequency.exponentialRampToValueAtTime(o.end, start + o.dur);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = o.wobble ?? 6;
+    const depth = ctx.createGain();
+    depth.gain.value = o.freq * 0.07;
+    lfo.connect(depth).connect(osc.frequency);
+    const formant = ctx.createBiquadFilter();
+    formant.type = 'bandpass';
+    formant.frequency.value = o.formant;
+    formant.Q.value = o.q ?? 3;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, start);
+    env.gain.exponentialRampToValueAtTime(o.gain, start + o.dur * 0.25);
+    env.gain.exponentialRampToValueAtTime(0.001, start + o.dur);
+    osc.connect(formant).connect(env).connect(out);
+    this.track(out, osc, [osc, lfo, depth, formant, env]);
+    for (const n of [osc, lfo]) {
+      n.start(start);
+      n.stop(start + o.dur + 0.05);
+    }
+  }
+
+  /** Looping noise that slowly swells and fades (a gust of wind). */
+  private swell(ctx: AudioContext, out: AudioNode, t: number, o: { dur: number; freq: number; to: number; q: number; gain: number }): void {
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = o.q;
+    filter.frequency.setValueAtTime(o.freq, t);
+    filter.frequency.linearRampToValueAtTime(o.to, t + o.dur);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(o.gain, t + o.dur * 0.45);
+    env.gain.linearRampToValueAtTime(0, t + o.dur);
+    src.connect(filter).connect(env).connect(out);
+    this.track(out, src, [src, filter, env]);
+    src.start(t, Math.random() * 0.9);
+    src.stop(t + o.dur + 0.05);
+  }
+
   private synth(name: SoundName, ctx: AudioContext, out: AudioNode, t: number): void {
     // Tiny pitch changes keep bursts from sounding like a machine repeating the same sample.
     const pitch = 0.96 + Math.random() * 0.08;
     switch (name) {
+      // The zombie night (soft on purpose: they set the mood, the guns stay the loud part).
+      case 'groan':
+        this.growl(ctx, out, t, { freq: 92 * pitch, end: 62, dur: 1.3, gain: 0.32, formant: 520 });
+        this.growl(ctx, out, t, { freq: 138 * pitch, end: 90, dur: 1.1, gain: 0.12, formant: 820, delay: 0.08 });
+        break;
+      case 'zstep':
+        this.burst(ctx, out, t, { dur: 0.09, type: 'lowpass', freq: 380 * pitch, gain: 0.32 });
+        this.tone(ctx, out, t, { dur: 0.07, type: 'sine', freq: 78 * pitch, to: 48, gain: 0.18 });
+        break;
+      case 'screech':
+        this.squawk(ctx, out, t, { delay: 0, freq: 620 * pitch, peak: 1250, end: 420, dur: 0.6, gain: 0.26 });
+        this.burst(ctx, out, t, { dur: 0.45, type: 'bandpass', freq: 2300, to: 1200, q: 2, gain: 0.07 });
+        break;
+      case 'wind':
+        this.swell(ctx, out, t, { dur: 4.8, freq: 420 * pitch, to: 260, q: 0.8, gain: 0.5 });
+        break;
+      case 'cluck':
+        this.squawk(ctx, out, t, { delay: 0, freq: 360 * pitch, peak: 520, end: 300, dur: 0.11, gain: 0.3 });
+        this.squawk(ctx, out, t, { delay: 0.2, freq: 340 * pitch, peak: 480, end: 280, dur: 0.1, gain: 0.25 });
+        break;
+      case 'creak':
+        this.growl(ctx, out, t, { freq: 58 * pitch, end: 44, dur: 0.9, gain: 0.14, formant: 950, q: 9, wobble: 9 });
+        break;
       case 'pistol':
         this.burst(ctx, out, t, { dur: 0.018, type: 'highpass', freq: 3300 * pitch, gain: 0.7 });
         this.burst(ctx, out, t, { dur: 0.1, type: 'bandpass', freq: 1700 * pitch, to: 600, q: 0.7, gain: 1 });

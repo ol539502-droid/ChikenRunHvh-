@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, describe, it } from 'node:test';
-import { MODES, SIM_DT, ZOMBIE, bossNumber, isBossWave, upgradeMultiplier, waveCount, waveKinds, zombieStats } from '@game/shared';
+import { MAPS, MODES, SIM_DT, ZOMBIE, bossNumber, buildNavGraph, createCollisionWorld, isBossWave, reachableCount, upgradeMultiplier, waveCount, waveKinds, zombieStats } from '@game/shared';
 import type { GameRoom } from '../src/rooms/GameRoom';
 import { createRoom } from '../src/rooms/modes';
 import type { ZombieRoom } from '../src/rooms/ZombieRoom';
@@ -63,6 +63,7 @@ describe('Zombie Apocalypse rules', () => {
     assert.equal(waveKinds(5).filter((k) => k === 'boss').length, 1);
     assert.equal(waveKinds(4).includes('boss'), false);
     assert.equal(waveKinds(1).every((k) => k === 'walker'), true, 'wave 1 is walkers only');
+    assert.ok(waveKinds(2).includes('sprinter'), 'sprinters from wave 2');
     assert.ok(waveKinds(3).includes('runner'), 'runners from wave 3');
     assert.ok(waveKinds(5).includes('brute'), 'brutes from wave 5');
     const a = zombieStats('walker', 1);
@@ -186,6 +187,83 @@ describe('Zombie Apocalypse match', () => {
       }
       assert.ok(nearest < 3, `they come all the way to you (nearest ${nearest.toFixed(1)} m)`);
       assert.ok(lowest < 100, `they hurt you (lowest hp ${lowest})`);
+    } finally {
+      t.room.close();
+    }
+  });
+
+  it('the graveyard is big and connected; zombies spawn all over it, never close to a survivor', () => {
+    const map = MAPS.night;
+    assert.ok(map.halfSize >= 88, 'at least twice the old 44 m');
+    const graph = buildNavGraph(map.nav!, createCollisionWorld(map));
+    assert.equal(reachableCount(graph), map.nav!.length, 'every waypoint (indoors too) reaches every other');
+    const t = setup();
+    try {
+      const spawn = (t.room as unknown as { zombieSpawn(): { x: number; z: number } }).zombieSpawn.bind(t.room);
+      for (const [x, z] of [[0, 8], [64, -66], [-60, 44.5], [66, 66]] as const) {
+        t.me.state.x = x;
+        t.me.state.z = z;
+        const spots = Array.from({ length: 300 }, spawn);
+        const dists = spots.map((s) => Math.hypot(s.x - x, s.z - z));
+        assert.ok(Math.min(...dists) >= ZOMBIE.spawnMinDistance - 1.2, `never right next to you at ${x},${z} (nearest ${Math.min(...dists).toFixed(1)} m)`);
+        assert.ok(Math.max(...dists) <= ZOMBIE.spawnMaxDistance + 1.2, `not miles away either at ${x},${z} (farthest ${Math.max(...dists).toFixed(1)} m)`);
+        const sides = new Set(spots.map((s) => `${Math.sign(s.x - x)}${Math.sign(s.z - z)}`));
+        assert.ok(sides.size >= 3, `from several directions at ${x},${z}`);
+      }
+      // Nobody standing (respawning): still round the survivors' spawn, not anywhere on the map.
+      t.me.alive = false;
+      assert.ok(Math.max(...Array.from({ length: 300 }, spawn).map((s) => Math.hypot(s.x, s.z))) < ZOMBIE.spawnMaxDistance + 11);
+      t.me.alive = true;
+      // From the middle, they come from beyond the cemetery wall too.
+      t.me.state.x = 0;
+      t.me.state.z = 8;
+      assert.ok(Array.from({ length: 300 }, spawn).some((s) => Math.max(Math.abs(s.x), Math.abs(s.z)) > 44));
+    } finally {
+      t.room.close();
+    }
+  });
+
+  it('a zombie from the far side of the map finds a survivor hiding in the barn', () => {
+    const t = setup();
+    try {
+      t.run(ZOMBIE.prepMs + 500);
+      t.priv.queue.length = 0;
+      const [hunter, ...rest] = t.zombies();
+      for (const z of rest) t.room.damage(z.p, t.me, 100000, false, 'rifle', { x: 0, y: 0, z: 0 }, t.now());
+      t.run(ZOMBIE.corpseMs + 200);
+      hunter!.p.state.x = -64;
+      hunter!.p.state.z = 44.5;
+      t.me.state.x = 64;
+      t.me.state.z = -66;
+      let nearest = Infinity;
+      for (let i = 0; i < 240 && nearest > 3; i++) {
+        t.run(500);
+        t.me.hp = 100;
+        nearest = Math.hypot(hunter!.p.state.x - t.me.state.x, hunter!.p.state.z - t.me.state.z);
+      }
+      assert.ok(nearest <= 3, `it got all the way into the barn (still ${nearest.toFixed(1)} m away)`);
+    } finally {
+      t.room.close();
+    }
+  });
+
+  it('sprinters walk slowly, then sprint in short bursts', () => {
+    const t = setup();
+    try {
+      t.priv.wave = 2;
+      const spawnZombie = (t.room as unknown as { spawnZombie(kind: string, now: number, near?: { x: number; y: number; z: number }): unknown }).spawnZombie.bind(t.room);
+      t.run(ZOMBIE.prepMs + 100);
+      spawnZombie('sprinter', t.now(), { x: 0, y: 0, z: 22 });
+      const s = t.zombies().find((z) => z.kind === 'sprinter')!;
+      assert.equal(s.p.info.name, '🧟 Sprinter');
+      const speeds = new Set<number>();
+      for (let i = 0; i < 80; i++) {
+        t.run(100);
+        t.me.hp = 100;
+        speeds.add(s.p.mods!.speed);
+      }
+      assert.ok(speeds.has(ZOMBIE.sprint.speed), 'it bursts');
+      assert.ok([...speeds].some((v) => v < 0.6), 'and slows down again');
     } finally {
       t.room.close();
     }

@@ -57,6 +57,7 @@ export function toggleGuide(onClose?: () => void): void {
       row('Switch team', k('team')),
       row('Buy menu, shop, build, Training weapons', k('build')),
       row('Get in a buggy, plant or defuse', k('use')),
+      row('Flashlight (Zombie Apocalypse)', k('flashlight')),
       row('Pause and menu', fixed('Esc')),
       row('This guide', fixed('F1')),
       h('p', { class: 'muted' }, 'Change any key in Settings › Keys.'),

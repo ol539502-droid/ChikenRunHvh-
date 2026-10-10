@@ -74,6 +74,16 @@ export interface MapDef {
    * linked. Only needed on maps with long detours (Sandstown).
    */
   nav?: readonly { x: number; z: number }[];
+  /** Lights in the level (looks only): lanterns at height `y`, or a campfire. */
+  lamps?: readonly MapLamp[];
+}
+
+export interface MapLamp {
+  x: number;
+  y: number;
+  z: number;
+  color: number;
+  fire?: boolean;
 }
 
 export function boxToAabb(box: MapBox): Aabb {

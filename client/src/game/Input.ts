@@ -36,6 +36,7 @@ export type Action =
   | 'use'
   | 'build'
   | 'nextBlock'
+  | 'flashlight'
   | 'inspect';
 
 /** Keys that always do the same thing (the rest come from Settings > Keys, see keybinds.ts). */
@@ -87,6 +88,7 @@ function buildKeyTables(k: Readonly<Keybinds>): KeyTables {
     ['team', 'team'],
     ['build', 'build'],
     ['nextBlock', 'nextBlock'],
+    ['flashlight', 'flashlight'],
   ];
   for (const [id, action] of bound) actions[k[id]] = action;
   const forward = [k.forward, 'ArrowUp'];

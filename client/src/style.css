@@ -5928,3 +5928,9 @@ code {
 :where(#modal-layer) .modal.wide {
   width: min(900px, 100%);
 }
+
+/* ============================== zombie night ============================== */
+/* Zombie Apocalypse: the HUD and scoreboard a little darker, so they don't glare in the dark. */
+#hud-layer .hud.hud-zombie > :is(.hud-top-left, .hud-top-center, .hud-top-right, .hud-bottom-left, .hud-bottom-right, .scoreboard, .results, .toasts) {
+  filter: brightness(0.78) saturate(0.85);
+}

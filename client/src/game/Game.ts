@@ -19,6 +19,9 @@ import { SUN_DIRECTION, Sky } from './Sky';
 import { World } from './World';
 
 /** Clamp long frames (tab switches, breakpoints) so the simulation doesn't try to catch up for seconds. */
+/** How far the camera draws: everything by day; at night only a little past the fog. */
+const DAY_VIEW = 400;
+const NIGHT_VIEW = 48;
 const MAX_FRAME_DT = 0.25;
 const PREVIEW_SPOT = new THREE.Vector3(0, 0, 18);
 const DEFAULT_LOOK_KEY = JSON.stringify(defaultLook());
@@ -77,7 +80,7 @@ export class Game {
   private readonly scene = new THREE.Scene();
   /** Drawn after the world with a fresh depth buffer: the first-person gun, so it never clips into walls. */
   private readonly overlay = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(baseFov(), 1, 0.1, 400);
+  private readonly camera = new THREE.PerspectiveCamera(baseFov(), 1, 0.1, DAY_VIEW);
   private readonly sky: Sky;
   private environment: THREE.Texture;
   private environmentTarget: THREE.WebGLRenderTarget;
@@ -196,8 +199,16 @@ export class Game {
     this.world = new World(this.scene, MAPS[id], this.renderer.capabilities.getMaxAnisotropy());
     this.applyWorldQuality();
     // Some maps have their own light (the Graveyard is a night).
-    this.baseLook = id === 'night' ? nightLook() : defaultLook();
+    const night = id === 'night';
+    this.baseLook = night ? nightLook() : defaultLook();
     this.sky.setTitle(id === SHOWCASE_MAP);
+    // The night: nothing is drawn past the fog (it hides it anyway), and the gun in your hands
+    // is lit like the world around it.
+    this.camera.far = night ? NIGHT_VIEW : DAY_VIEW;
+    this.camera.updateProjectionMatrix();
+    this.sky.setReach(this.camera.far);
+    this.overlayHemi.intensity = night ? 0.3 : 0.9;
+    this.overlaySun.intensity = night ? 0.6 : 2.2;
     this.lookKey = '';
     this.applyLook();
   }
@@ -326,7 +337,8 @@ export class Game {
 
   private applyWorldQuality(): void {
     this.world.setShadows({ mapSize: this.quality.shadowMap, extent: this.quality.shadowExtent });
-    this.world.setDetail(this.quality.foliage);
+    // The night map is big and foggy: a third of the grass looks the same and draws much faster.
+    this.world.setDetail(this.quality.foliage * (this.world.map.id === 'night' ? 0.35 : 1));
     this.world.setAmbient(this.quality.envLight);
   }
 
@@ -358,7 +370,7 @@ export class Game {
     else this.updateIdleCamera(dt);
 
     this.sky.update(this.camera, dt);
-    this.world.update(dt);
+    this.world.update(dt, this.camera.position);
     this.world.updateShadows(this.session ? this.focusAhead() : null);
     if (this.composer && !nativeOn(this.session?.hvhVisuals??null,'Visuals.Effects.disablePostProcessing')) this.composer.render(dt);
     else {
@@ -369,9 +381,12 @@ export class Game {
   };
 
   /** The first-person gun on top of the world, lit like the world. */
+  private readonly overlayHemi = new THREE.HemisphereLight(0xcfe8ff, 0x4f6b32, 0.9);
+  private readonly overlaySun = new THREE.DirectionalLight(0xfff0d8, 2.2);
+
   private setupOverlay(): void {
-    this.overlay.add(new THREE.HemisphereLight(0xcfe8ff, 0x4f6b32, 0.9));
-    const sun = new THREE.DirectionalLight(0xfff0d8, 2.2);
+    this.overlay.add(this.overlayHemi);
+    const sun = this.overlaySun;
     sun.position.copy(SUN_DIRECTION).multiplyScalar(10);
     this.overlay.add(sun, sun.target);
     this.overlay.environment = this.environment;

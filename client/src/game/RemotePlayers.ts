@@ -40,6 +40,7 @@ export class RemotePlayer {
     this.info = info;
     this.friendly = friendly;
     this.chicken = new Chicken(info.appearance, info.team);
+    if (info.undead) this.chicken.setAppearance(info.appearance, info.undead);
     this.tag = new NameTag(info.name, friendly || info.team === 0 ? 0xffffff : TEAM_COLORS[info.team], info.dev);
     this.chicken.root.add(this.tag.sprite);
     // Hidden until the first snapshot tells us where it is.
@@ -50,7 +51,7 @@ export class RemotePlayer {
     const nameChanged = info.name !== this.info.name || info.team !== this.info.team || info.dev !== this.info.dev;
     this.info = info;
     this.friendly = friendly;
-    this.chicken.setAppearance(info.appearance);
+    this.chicken.setAppearance(info.appearance, info.undead);
     this.chicken.setTeam(info.team);
     if (nameChanged) {
       this.tag.dispose();

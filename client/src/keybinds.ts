@@ -27,7 +27,8 @@ export type BindId =
   | 'teamChat'
   | 'team'
   | 'build'
-  | 'nextBlock';
+  | 'nextBlock'
+  | 'flashlight';
 
 export const BINDS: readonly BindDef[] = [
   { id: 'forward', label: 'Move forward', group: 'Movement', code: 'KeyW' },
@@ -49,6 +50,7 @@ export const BINDS: readonly BindDef[] = [
   { id: 'team', label: 'Switch team', group: 'Other', code: 'KeyM' },
   { id: 'build', label: 'Build mode (Sandbox)', group: 'Other', code: 'KeyB' },
   { id: 'nextBlock', label: 'Next block (Sandbox)', group: 'Other', code: 'KeyX' },
+  { id: 'flashlight', label: 'Flashlight (Zombies)', group: 'Other', code: 'KeyT' },
 ];
 
 export type Keybinds = Record<BindId, string>;

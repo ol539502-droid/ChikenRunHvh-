@@ -88,22 +88,11 @@ export function buildNavGraph(points: readonly NavPoint[], world: CollisionWorld
 
 /** The waypoint nearest to `p` that `p` can walk straight to (or just the nearest one). */
 export function nearestNavPoint(graph: NavGraph, p: NavPoint, world: CollisionWorld): number {
-  let best = -1;
-  let bestDist = Infinity;
-  let fallback = 0;
-  let fallbackDist = Infinity;
-  graph.points.forEach((q, i) => {
-    const d = Math.hypot(q.x - p.x, q.z - p.z);
-    if (d < fallbackDist) {
-      fallbackDist = d;
-      fallback = i;
-    }
-    if (d < bestDist && walkable(p, q, world)) {
-      bestDist = d;
-      best = i;
-    }
-  });
-  return best >= 0 ? best : fallback;
+  // Nearest first, so the (costly) walk check stops at the first one that passes.
+  const dist = graph.points.map((q) => Math.hypot(q.x - p.x, q.z - p.z));
+  const order = dist.map((_, i) => i).sort((a, b) => dist[a]! - dist[b]! || a - b);
+  for (const i of order) if (walkable(p, graph.points[i]!, world)) return i;
+  return order[0] ?? 0;
 }
 
 /**
