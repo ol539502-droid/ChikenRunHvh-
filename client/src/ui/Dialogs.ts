@@ -54,7 +54,7 @@ export function openServerBrowser(listRooms: () => Promise<RoomSummary[]>, join:
 /** Pick mode, map, privacy and bots for a new room. */
 export function openCreateRoom(create: (req: CreateRoomRequest) => void): void {
   // Ranked (FaceChiken) is matchmaking only.
-  const mode = h('select', { id: 'create-mode' }, ...MODE_IDS.filter((id) => !MODES[id].ranked).map((id) => h('option', { value: id }, MODES[id].name)));
+  const mode = h('select', { id: 'create-mode' }, ...MODE_IDS.filter((id) => !MODES[id].ranked && !MODES[id].training).map((id) => h('option', { value: id }, MODES[id].name)));
   const map = h('select', { id: 'create-map' });
   const fillMaps = () => {
     clear(map);
@@ -280,7 +280,7 @@ export function openAccount(api: Api, onChanged: () => void): void {
 }
 
 /** Modes with their own leaderboard (everything but Sandbox). */
-const BOARD_MODES = MODE_IDS.filter((id) => !MODES[id].building && !MODES[id].zombies);
+const BOARD_MODES = MODE_IDS.filter((id) => !MODES[id].building && !MODES[id].zombies && !MODES[id].training);
 
 /** The best players overall (by rank) or in one mode (by wins), one tab each. */
 /** "3h 20m" / "12m" until the daily challenges reset. */

@@ -557,6 +557,8 @@ export interface ClientToServerEvents {
   switchWeapon: (slot: number) => void;
   /** M: move to the other team. The server checks the mode, balance and a cooldown. */
   switchTeam: (ack: (res: { ok: boolean; error?: string }) => void) => void;
+  /** Training only: take a gun or knife from the B menu, or refill grenades. The server checks it. */
+  trainingGive: (req: import('./training').TrainingGiveRequest, ack: (res: { ok: boolean; error?: string }) => void) => void;
   throw: (req: ThrowRequest) => void;
   aim: (aiming: boolean) => void;
   /** `teamOnly`: only your team hears it (in modes without teams it goes to everyone). */

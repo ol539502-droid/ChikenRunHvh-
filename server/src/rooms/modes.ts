@@ -4,6 +4,7 @@ import { BombRoom } from './BombRoom';
 import { CtfRoom } from './CtfRoom';
 import { GameRoom, type RoomHooks, type RoomOptions } from './GameRoom';
 import { SandboxRoom } from './SandboxRoom';
+import { TrainingRoom } from './TrainingRoom';
 import { ZombieRoom } from './ZombieRoom';
 
 /** Picks the room implementation for a mode. */
@@ -20,6 +21,8 @@ export function createRoom(io: GameServer, options: RoomOptions, hooks: RoomHook
       return new SandboxRoom(io, options, hooks);
     case 'zombie':
       return new ZombieRoom(io, options, hooks);
+    case 'training':
+      return new TrainingRoom(io, options, hooks);
     default:
       return new GameRoom(io, options, hooks);
   }

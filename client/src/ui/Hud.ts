@@ -213,7 +213,7 @@ export class Hud {
     this.mode = MODES[room.mode];
     this.miniKey = '';
     this.modeLabel.textContent = this.mode.name;
-    this.objective.textContent = this.mode.bomb ? 'Plant or defuse · Hold E on a site' : this.mode.id === 'ctf' ? 'Steal their flag. Bring it home.' : this.mode.zombies ? 'Survive the waves · B shop between waves · C builds a wall (10 s)' : this.mode.building ? 'B to build · X to change block' : `${this.mode.teams ? 'Team' : 'First to'} ${this.mode.scoreLimit} ${this.mode.teams ? 'kills to win' : 'kills wins'}`;
+    this.objective.textContent = this.mode.training ? 'Practice · targets never shoot back · nothing counts' : this.mode.bomb ? 'Plant or defuse · Hold E on a site' : this.mode.id === 'ctf' ? 'Steal their flag. Bring it home.' : this.mode.zombies ? 'Survive the waves · B shop between waves · C builds a wall (10 s)' : this.mode.building ? 'B to build · X to change block' : `${this.mode.teams ? 'Team' : 'First to'} ${this.mode.scoreLimit} ${this.mode.teams ? 'kills to win' : 'kills wins'}`;
     this.roomCode.textContent = room.private ? `Room code: ${room.code}` : '';
     this.teamScores.hidden = !this.mode.teams || this.mode.zombies === true;
     clear(this.killfeed);
@@ -640,7 +640,7 @@ export class Hud {
 
   /** The live leaders: top three, plus you if you're further down. Skipped in Sandbox. */
   renderMiniBoard(lines: ScoreLine[]): void {
-    const sorted = this.mode.building ? [] : [...lines].sort((a, b) => b.info.score - a.info.score || b.info.kills - a.info.kills);
+    const sorted = this.mode.building || this.mode.training ? [] : [...lines].sort((a, b) => b.info.score - a.info.score || b.info.kills - a.info.kills);
     const mine = sorted.findIndex((l) => l.self);
     const shown = sorted.slice(0, 3);
     if (mine >= 3) shown.push(sorted[mine]!);

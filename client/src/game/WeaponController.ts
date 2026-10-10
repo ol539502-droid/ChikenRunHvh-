@@ -1,5 +1,5 @@
 import { WEAPONS, WEAPON_SWITCH_MS, defaultHvhLoadout, fireIntervalFor, magazineSize, shotUsesAmmo, takeShot, type FireTiming, type DevMods, type PlayerState, type WeaponDef, type WeaponId, type ShotEvent } from '@game/shared';
-import { ExploitResource, defaultHvhCore, hvhWeapon } from '@game/shared';
+import { ExploitResource, defaultHvhCore, hvhWeapon, trainingMods } from '@game/shared';
 
 /** After firing, trust our own ammo count over (older) snapshots for this long. */
 const AMMO_TRUST_MS = 400;
@@ -28,7 +28,15 @@ export class WeaponController {
   private triggerWasDown = false;
   private assistedBurst = false;
   /** Developer modifiers confirmed by the server (null = normal rules). */
-  mods: DevMods | null = null;
+  /** Training: infinite ammo and instant reload, on top of any developer modifiers. */
+  training = false;
+  private devMods: DevMods | null = null;
+  get mods(): DevMods | null {
+    return this.training ? trainingMods(this.devMods) : this.devMods;
+  }
+  set mods(value: DevMods | null) {
+    this.devMods = value;
+  }
   /** Developer option: semi-automatic weapons keep firing while the trigger is held. */
   forceAutomatic = false;
   hvh = defaultHvhLoadout();

@@ -25,6 +25,9 @@ export class App {
   private readonly game: Game;
   private readonly dev: Dev;
   /** Pause menu: the HvH panels, only shown in HvH matches. */
+  private readonly reportButton = h('button', { type: 'button', class: 'secondary', onclick: () => this.openReport() }, 'Report a player');
+  /** 'Leave match', or 'Back to lobby' in Training. */
+  private readonly leaveButton = h('button', { type: 'button', class: 'secondary', onclick: () => this.leave() }, 'Leave match');
   private readonly hvhPanelsButton = h('button', { type: 'button', class: 'secondary', onclick: () => this.openHvhSetup() }, 'HvH panels');
   private readonly friends: Friends;
   /** The old mega?dev menu, on L (the HvH Lab above is on Insert). */
@@ -142,9 +145,9 @@ export class App {
         h('h2', null, 'Paused'),
         resume,
         this.hvhPanelsButton,
-        h('button', { type: 'button', class: 'secondary', onclick: () => this.openReport() }, 'Report a player'),
+        this.reportButton,
         h('button', { type: 'button', class: 'secondary', onclick: () => openSettings(this.game.audio) }, 'Settings'),
-        h('button', { type: 'button', class: 'secondary', onclick: () => this.leave() }, 'Leave match'),
+        this.leaveButton,
       ),
     );
     this.pause.hidden = true;
@@ -257,6 +260,9 @@ export class App {
     if (this.hvhSetup) this.hvhSetup.root.hidden = devMenu;
     this.pause.hidden = !paused || anyModalOpen() || overlay || Boolean(this.hvhSetup);
     this.hvhPanelsButton.hidden = this.game.activeSession?.mode.id !== 'hvh';
+    const training = this.game.activeSession?.mode.training === true;
+    this.leaveButton.textContent = training ? 'Back to lobby' : 'Leave match';
+    this.reportButton.hidden = training;
     this.pauseButton.hidden = !inGame || !this.isTouch || paused || overlay || Boolean(this.hvhSetup);
     this.touch?.setVisible(inGame && !paused && !overlay && !this.hvhSetup);
     this.cookieNotice.setVisible(this.screen === 'menu' || this.screen === 'shop');

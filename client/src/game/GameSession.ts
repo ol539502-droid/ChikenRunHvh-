@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TrainingMenu } from '../ui/TrainingMenu';
 import { nativeOn, nativeValue, type NativeValues } from '../dev/skeet/visualValues';
 import {
   ZOMBIE_SHOP_BY_ID,
@@ -79,6 +80,7 @@ import {
   bombHoldsPlayer,
   teamName,
   teamSwitchBlocked,
+  type TrainingGiveRequest,
 } from '@game/shared';
 import type { Network } from '../net/Network';
 import { getSettings } from '../settings';
@@ -204,6 +206,8 @@ export class GameSession {
   private readonly buyMenu: BuyMenu | null;
   /** Zombie Apocalypse: the wave panel, shop and game-over screen. */
   private readonly zombieHud: ZombieHud | null;
+  /** Training: the weapon menu (B). */
+  private readonly trainingMenu: TrainingMenu | null;
   private zombieOver = false;
   /** A sniper's scope: 0 = not scoped, 1 = scoped, 2 = zoomed in further. */
   private scopeLevel: 0 | 1 | 2 = 0;
@@ -272,6 +276,7 @@ export class GameSession {
     this.loot.onBreak = (at) => ctx.audio.play('boxBreak', at);
     this.weapons = new WeaponController(meInfo.loadout);
     this.weapons.tactical = this.mode.id === 'hvh';
+    this.weapons.training = this.mode.training === true;
     this.viewmodel = new ViewModel(ctx.overlay);
     this.viewmodel.onInspectCue = (cue) => ctx.audio.play(cue === 'in' ? 'reload' : 'click', undefined, 0.55);
     this.bombView = this.mode.bomb ? new BombView(ctx.scene) : null;
@@ -279,6 +284,12 @@ export class GameSession {
     if (this.buyMenu) {
       this.buyMenu.onBuy = (item) => this.buy(item);
       this.buyMenu.onClose = () => this.closeBuyMenu();
+    }
+    this.trainingMenu = this.mode.training ? new TrainingMenu(ctx.hud.root) : null;
+    if (this.trainingMenu) {
+      this.trainingMenu.onClose = () => this.toggleTrainingMenu(false);
+      this.trainingMenu.onPick = (id) => this.trainingPick(id);
+      this.trainingMenu.onGrenade = (grenade) => this.trainingRequest({ grenade }, 'Refilled');
     }
     this.zombieHud = this.mode.zombies ? new ZombieHud(ctx.hud.root) : null;
     if (this.zombieHud) {
@@ -479,7 +490,7 @@ export class GameSession {
 
   /** The buy menu is open (it has the mouse). */
   get buyMenuOpen(): boolean {
-    return (this.buyMenu?.open ?? false) || (this.zombieHud?.shopOpen ?? false) || this.zombieOver;
+    return (this.buyMenu?.open ?? false) || (this.zombieHud?.shopOpen ?? false) || this.zombieOver || (this.trainingMenu?.open ?? false);
   }
   setWeaponTint(color: string | null, style = 0, alpha = 1): void { this.viewmodel.setTint(color,style,alpha); }
 
@@ -643,6 +654,10 @@ export class GameSession {
         }
         break;
       case 'build':
+        if (this.trainingMenu) {
+          this.toggleTrainingMenu(!this.trainingMenu.open);
+          break;
+        }
         if (this.zombieHud) {
           this.toggleZombieShop();
           break;
@@ -911,6 +926,7 @@ export class GameSession {
     const bomb = this.bombHint();
     if (bomb) return bomb;
     if (this.local.car) return 'Driving · Shoot with the mouse · Space drift · Shift nitro · E to get out';
+    if (this.trainingMenu) return this.trainingMenu.open ? null : 'B · Weapons · Esc · Back to lobby';
     if (this.zombieHud) return this.zombieHud.shopOpen ? null : this.zombieState?.phase === 'prep' ? 'B · Shop (open now!) · C · Build a wall' : 'C · Build a wall (gone in 10 s) · Ctrl · Crouch';
     if (this.building) {
       const kind = BLOCK_KINDS[this.blockIndex]!;
@@ -1028,6 +1044,36 @@ export class GameSession {
     const boss = this.zombieState?.boss;
     const health = boss ? (this.remotes.get(boss.pid)?.latest?.hp ?? null) : null;
     hud.update(this.serverNow(), { money: this.money, weapon: this.weapons.weapon, loadout: this.weapons.loadout }, health === null ? null : health / 100);
+  }
+
+  /** Training's weapon menu: it takes the mouse while open. */
+  private toggleTrainingMenu(open: boolean): void {
+    const menu = this.trainingMenu;
+    if (!menu || menu.open === open) return;
+    menu.setOpen(open, this.weapons.loadout);
+    if (open) this.ctx.input.releaseLock();
+    else void this.ctx.input.requestLock();
+    this.ctx.onOverlay();
+    this.ctx.audio.play('click');
+  }
+
+  /** Ask the server (it checks this is Training), then take the new weapon out. */
+  private trainingPick(id: WeaponId): void {
+    this.trainingRequest({ weapon: id }, `${WEAPONS[id].name} in hand`, () => {
+      const slot = this.weapons.loadout.indexOf(id);
+      if (slot >= 0) this.switchWeapon(() => this.weapons.switchTo(slot, performance.now()));
+    });
+  }
+
+  private trainingRequest(req: TrainingGiveRequest, done: string, then?: () => void): void {
+    this.ctx.net.socket
+      .timeout(5000)
+      .emitWithAck('trainingGive', req)
+      .then((res) => {
+        if (res.ok) then?.();
+        this.trainingMenu?.update(this.weapons.loadout, res.ok ? done : res.error ?? 'Not available', !res.ok);
+      })
+      .catch(() => this.trainingMenu?.update(this.weapons.loadout, 'The server did not answer', true));
   }
 
   private toggleZombieShop(): void {
@@ -1690,6 +1736,7 @@ export class GameSession {
     this.bombView?.dispose();
     this.buyMenu?.dispose();
     this.zombieHud?.dispose();
+    this.trainingMenu?.dispose();
     this.ctx.input.zombieMode = false;
     this.local.dispose();
     this.remotes.dispose();

@@ -1104,7 +1104,7 @@ export class GameRoom {
   }
 
   /** Team spawns in team modes; otherwise the free spot furthest from living enemies. */
-  private pickSpawn(p: ServerPlayer): SpawnPoint {
+  protected pickSpawn(p: ServerPlayer): SpawnPoint {
     if (this.mode.spreadSpawns && !this.mode.teams && !this.mode.building) return this.pickSpreadSpawn(p);
     const all = this.map.spawns;
     const team = p.info.team;

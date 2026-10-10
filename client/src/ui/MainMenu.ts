@@ -27,7 +27,7 @@ export interface MenuActions {
 
 /** Mode tabs. Any mode not listed lands in the last one. */
 const CATEGORIES: { id: string; label: string; modes: ModeId[] }[] = [
-  { id: 'casual', label: 'Casual', modes: ['ffa', 'tdm', 'squad', 'duel'] },
+  { id: 'casual', label: 'Casual', modes: ['ffa', 'tdm', 'squad', 'duel', 'training'] },
   { id: 'competitive', label: 'Competitive', modes: ['face', 'bomb', 'hvh'] },
   { id: 'fun', label: 'Fun', modes: ['zombie', 'arms', 'knife', 'ctf', 'sandbox'] },
 ];
@@ -51,6 +51,7 @@ const ONLINE_EVERY_MS = 20_000;
 
 /** "5 vs 5", "1 vs 1", "Free for all · 12"… */
 function playersLine(m: ModeDef): string {
+  if (m.training) return 'Solo · practice';
   if (m.building) return `Build together · up to ${m.maxPlayers}`;
   if (m.zombies) return `Co-op survival · up to ${m.maxHumans ?? m.maxPlayers}`;
   if (m.ranked) return `Ranked ${m.maxPlayers / 2} vs ${m.maxPlayers / 2} · real players`;
@@ -130,7 +131,7 @@ export class MainMenu {
           { class: 'mode-top' },
           h('div', { class: 'mode-icon' }, icon(MODE_ICON[id])),
           h('span', { class: 'mode-players' }, playersLine(m)),
-          m.building || m.zombies ? null : h('button', { type: 'button', class: 'mode-board', title: `${m.name} leaderboard`, 'aria-label': `${m.name} leaderboard`, onclick: () => actions.leaderboard(id) }, icon('trophy')),
+          m.building || m.zombies || m.training ? null : h('button', { type: 'button', class: 'mode-board', title: `${m.name} leaderboard`, 'aria-label': `${m.name} leaderboard`, onclick: () => actions.leaderboard(id) }, icon('trophy')),
         ),
         h('h3', null, m.name),
         h('p', null, m.description),

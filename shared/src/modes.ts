@@ -1,7 +1,7 @@
 import type { MapId, Team } from './maps/types';
 import type { WeaponId } from './weapons';
 
-export type ModeId = 'ffa' | 'tdm' | 'duel' | 'ctf' | 'sandbox' | 'hvh' | 'knife' | 'bomb' | 'arms' | 'face' | 'squad' | 'zombie';
+export type ModeId = 'ffa' | 'tdm' | 'duel' | 'ctf' | 'sandbox' | 'hvh' | 'knife' | 'bomb' | 'arms' | 'face' | 'squad' | 'zombie' | 'training';
 
 export interface ModeDef {
   id: ModeId;
@@ -54,6 +54,11 @@ export interface ModeDef {
    * registered accounts), matchmaking only (no private rooms), developer tools off.
    */
   ranked?: boolean;
+  /**
+   * Training: you alone (your own private room) with practice targets. Any gun or knife from the
+   * B menu, infinite ammo, you can't be hurt, no clock, no score, and nothing is recorded.
+   */
+  training?: boolean;
 }
 
 const DEFS: ModeDef[] = [
@@ -120,6 +125,11 @@ const DEFS: ModeDef[] = [
     id: 'sandbox', name: 'Sandbox', description: 'Build anything with blocks. No score, no rules.',
     teams: false, maxPlayers: 16, scoreLimit: 0, timeLimitMs: 0, respawnMs: 1500, minPlayers: 1,
     maps: ['flat', 'farm', 'town'], building: true, vehicles: true, wallbang: true,
+  },
+  {
+    id: 'training', name: 'Training', description: 'Just you and practice targets. Any gun or knife (press B), infinite ammo, no clock, nothing counts.',
+    teams: false, maxPlayers: 12, maxHumans: 1, scoreLimit: 0, timeLimitMs: 0, respawnMs: 3000, minPlayers: 1,
+    maps: ['flat', 'farm', 'town'], building: false, vehicles: false, wallbang: true, noBots: true, noDrops: true, spawnProtectionMs: 0, training: true,
   },
 ];
 

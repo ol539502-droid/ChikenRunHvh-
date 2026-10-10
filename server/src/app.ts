@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { TrainingRoom } from './rooms/TrainingRoom';
 import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
@@ -208,6 +209,14 @@ function attachHandlers(socket: GameSocket, rooms: RoomManager, social: Social, 
   socket.on('fire', inRoom((room, player, req: unknown) => room.handleFire(player, req)));
   socket.on('reload', inRoom((room, player) => room.handleReload(player)));
   socket.on('switchWeapon', inRoom((room, player, slot: unknown) => room.handleSwitch(player, slot)));
+  socket.on('trainingGive', (req, ack) => {
+    if (typeof ack !== 'function') return;
+    const room = rooms.roomOf(socket.id);
+    const player = room?.playerFor(socket.id);
+    if (!(room instanceof TrainingRoom) || !player) return ack({ ok: false, error: 'Only in Training.' });
+    const error = room.give(player, req);
+    ack(error ? { ok: false, error } : { ok: true });
+  });
   socket.on('switchTeam', (ack) => {
     if (typeof ack !== 'function') return;
     const room = rooms.roomOf(socket.id);

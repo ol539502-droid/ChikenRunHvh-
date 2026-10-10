@@ -77,6 +77,11 @@ export class RoomManager {
   quickPlay(mode: ModeId, map?: MapId, partySize = 1, withoutBots = false): GameRoom | null {
     // Modes that never have bots (ranked, Squad Up) are always "without bots".
     const noBots = withoutBots || MODES[mode].noBots === true || MODES[mode].ranked === true;
+    // Training is always your own private room.
+    if (MODES[mode].training) {
+      const maps = MODES[mode].maps;
+      return this.create(mode, map ?? maps[Math.floor(Math.random() * maps.length)]!, true, undefined, 0, false, true);
+    }
     let best: GameRoom | null = null;
     for (const room of this.rooms.values()) {
       if (room.info.private || room.info.mode !== mode || room.isFull || (map && room.info.map !== map)) continue;

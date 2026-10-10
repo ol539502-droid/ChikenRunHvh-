@@ -33,6 +33,7 @@ const PATHS = {
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   coin: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M9.5 10c0-1 1-1.5 2.5-1.5s2.5.7 2.5 1.7-1 1.5-2.5 1.8-2.5.8-2.5 1.8 1 1.7 2.5 1.7 2.5-.5 2.5-1.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/>',
   egg: '<path d="M12 3c3.5 0 6.5 5.5 6.5 10a6.5 6.5 0 0 1-13 0C5.5 8.5 8.5 3 12 3z"/>',
   smoke: '<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1A4 4 0 0 1 17 18z"/>',
   flash: '<path d="M13 2L5 13h6l-1 9 8-11h-6z" fill="currentColor"/>',
@@ -51,5 +52,5 @@ export function icon(name: IconName, cls = ''): HTMLElement {
 
 export const MODE_ICON: Record<ModeId, IconName> = {
   ffa: 'chicken', tdm: 'swords', squad: 'team', duel: 'duel', face: 'medal', bomb: 'bomb', hvh: 'eye',
-  arms: 'ladder', knife: 'knife', ctf: 'flag', sandbox: 'bricks', zombie: 'skull',
+  arms: 'ladder', knife: 'knife', ctf: 'flag', sandbox: 'bricks', zombie: 'skull', training: 'target',
 };

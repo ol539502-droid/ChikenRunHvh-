@@ -3,6 +3,58 @@
 Working notes, one batch of work at a time (newest first). Each batch has its plan, what was done
 for each step, and a log of every mistake made along the way (what went wrong, and how it was fixed).
 
+# Batch 11 (10 Oct): Training mode
+
+Solo practice: any gun, any knife, targets that never shoot back, no clock, no score, nothing counted.
+
+Key: **B** is already the action key in ChikenBomb (buy menu), Zombie Apocalypse (shop) and Sandbox (build), but in a Training room it does nothing else, so B opens the weapon menu there.
+
+## The plan
+
+| # | Step | Status |
+| --- | --- | --- |
+| T1 | Shared: the `training` mode (Casual), its gun and knife lists, training ammo rules, a `trainingGive` request | Done |
+| T2 | Server: a `TrainingRoom` (always your own private room); targets: static and slowly strafing dummies that never shoot and respawn 3 s after dying (and heal 3 s after a hit); you take no damage; kills count for nothing; the match never ends; infinite ammo, instant reload, grenade refills | Done |
+| T3 | Server checks the weapon menu: only in Training, only known guns/knives | Done |
+| T4 | Lobby card: icon, "Solo · practice", description, map choice, Play | Done |
+| T5 | Weapon menu (B): every gun, every knife, egg/smoke/flash refills; B or Esc closes; the HUD and pause match (pause says "Back to lobby") | Done |
+| T6 | Tests and a live check: starts from the lobby, B menu, every weapon and knife, targets respawn, no timer, can't die, stats unchanged | Done |
+
+## What was done (batch 11)
+
+- **T1 Shared.**
+  - [shared/src/modes.ts](shared/src/modes.ts): the `training` mode on Flat, Farm and Town. One human (`maxHumans: 1`), no time or score limit, targets respawn after 3 s, no bots, no drops, no spawn protection.
+  - [shared/src/training.ts](shared/src/training.ts): the gun list (Arms Race's ladder order first, then every other gun: 21) and the knife list (every melee weapon: 8). Also the ammo rules (`trainingMods`: infinite ammo, instant reload, infinite flashes) and `trainingLoadout` (one gun + one knife).
+  - [shared/src/protocol.ts](shared/src/protocol.ts): the `trainingGive` request.
+- **T2 Server room.**
+  - [server/src/rooms/TrainingRoom.ts](server/src/rooms/TrainingRoom.ts): 8 brown targets on open ground 7-35 m from your start, a few of them strafing slowly across your view. They turn to face you, never shoot, heal 3 s after a hit and respawn at their spot 3 s after going down.
+  - You can't be damaged at all (targets, your own eggs or rockets; the game has no fall damage).
+  - Downed targets count no kill and no score (`kill(..., counted = false)`, from the team-switch work).
+  - `endMatch` does nothing, and since that is the only place results reach the database, nothing is ever recorded.
+  - **Plumbing:** [modes.ts](server/src/rooms/modes.ts) picks the room. [RoomManager.ts](server/src/rooms/RoomManager.ts) always makes your own private room (a random map for "Any map"). [GameRoom.ts](server/src/rooms/GameRoom.ts) only changes `pickSpawn` from private to protected, so Training can choose spawns.
+- **T3 Checked by the server.** [server/src/app.ts](server/src/app.ts) answers `trainingGive` only in a Training room, and the room accepts only weapons from the two lists or one of the three grenades.
+- **T4 Lobby card** (Casual tab): a drawn target icon, "Solo · practice", the description, the map choice and Play. It has no leaderboard trophy and is not offered in Create room or on the leaderboards ([MainMenu.ts](client/src/ui/MainMenu.ts), [icons.ts](client/src/ui/icons.ts), [Dialogs.ts](client/src/ui/Dialogs.ts)).
+- **T5 Weapon menu (B).**
+  - [client/src/ui/TrainingMenu.ts](client/src/ui/TrainingMenu.ts): guns and knives shown with their own pictures (the kill-feed silhouettes), plus egg, smoke and flash refills. What you hold is marked; B or Esc closes it.
+  - [GameSession.ts](client/src/game/GameSession.ts): opening the menu frees the mouse, and a pick switches you to that weapon.
+  - [WeaponController.ts](client/src/game/WeaponController.ts) predicts the same infinite ammo and instant reload, without touching dev code.
+  - **HUD:** a practice line, no leaders list, and the hint "B · Weapons · Esc · Back to lobby" ([Hud.ts](client/src/ui/Hud.ts)).
+  - **Pause** says **Back to lobby** and hides Report a player ([App.ts](client/src/app/App.ts)). Styles are at the end of [style.css](client/src/style.css).
+- **T6 Checked.**
+  - **Server tests:** [server/test/training.test.ts](server/test/training.test.ts), 5 tests.
+  - **Live from the lobby:**
+    - The card shows "Solo · practice"; the room has 8 targets, no timer and no end time.
+    - B opens 21 guns, 8 knives and 3 grenades, and all 29 weapons land in your hand. Esc closes.
+    - A rifle target went down and came back; the magazine stayed 30/30.
+    - You stayed at 100 HP with 0 kills and 0 score. Pause showed Back to lobby, which returned to the title.
+    - Coins, rank points, kills, deaths, wins, matches, history and daily progress were identical before and after.
+  - Typecheck, all 424 tests and the build pass. No HvH panel or dev mode file changed.
+
+## Mistakes log (batch 11)
+
+1. **The card showed a leaderboard trophy, and "Any map" always picked Flat.** Both spotted in the screenshots and fixed.
+2. **Test-script slip:** the pause backdrop blocked a headless click; the script clicks through script. Not a game bug.
+
 # Batch 10 (8 Oct): the dev cheat's anti-aim works again
 
 - **The bug.**
