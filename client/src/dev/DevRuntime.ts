@@ -9,10 +9,11 @@ import { DevDebug3D } from './DevDebug3D';
 import { DevOverlay } from './DevOverlay';
 import { peekSteering } from './tactics';
 import type { DevConfig } from './config';
-import { shotRecordUsable } from '@game/shared';
+import { LEGACY_MAX_CHOKE, shotRecordUsable } from '@game/shared';
+import { LATE_CSGO } from '@game/shared/hvh/v2';
 import { nativeOn, nativeValue, nativeColor } from './skeet/visualValues';
 import { skeetEffectiveConfig, skeetProfile } from './skeet/model';
-import { ResolverSystem, scanRage, buildHvhMatrix, hvhHitchance, afterArmor, directionFromAngles, DEFAULT_RAGE, defaultHvhCore, HvhExtensionHost, airStrafeInput, moveSpeedFor, SIM_DT,
+import { ResolverSystem, scanRage, buildHvhMatrix, hvhHitchance, directionFromAngles, DEFAULT_RAGE, defaultHvhCore, HvhExtensionHost, airStrafeInput, moveSpeedFor, SIM_DT,
   autoStopInput, planAutoStop, predictEnemyPeek, type AutoStopPlan, type PeekForecast, type ObservableRecord, type ShotCandidate, type ShotIntent } from '@game/shared';
 
 const DEG = Math.PI / 180;
@@ -52,22 +53,22 @@ export class DevRuntime implements DevHooks {
   private nativeRenderValues: unknown;
   private readonly styledPlayers = new Set<number>();
   private readonly hiddenTeammates = new Set<number>();
-  private readonly info = h('div', { class: 'dev-tactical', role: 'status', 'aria-live': 'off' });
-  private infoKey = '';
   private lastInfoAt = 0;
-  private readonly logs: string[] = [];
   private readonly playerRules = new Map<number, { ignore: boolean; body: boolean }>();
   private policySource: DevConfig | undefined;
   private policyWeapon = '';
   private policyValue: DevConfig | undefined;
   private readonly binds = h('div', { class: 'skeet-binds', 'aria-label': 'Active panel binds' });
   private readonly watermark = h('div', { class: 'skeet-watermark' });
-  diagnostics = { target: 'No target', damage: 0, chance: 0, state: 'Idle' };
+  /**
+   * The ragebot's last gate readout (estimated damage, hit chance %, and why it is or is not firing).
+   * Nothing renders it since the Telemetry panel went; it is kept on purpose as the observable the
+   * gate tests (hvh-runtime.test.ts) pin and for a debug overlay.
+   */
+  diagnostics = { damage: 0, chance: 0, state: 'Idle' };
 
   constructor(private readonly dev: Dev) {
     this.overlay = new DevOverlay(dev);
-    this.info.hidden = true;
-    (document.getElementById('hud-layer') ?? document.body).append(this.info);
     this.binds.hidden = this.watermark.hidden = true;
     (document.getElementById('hud-layer') ?? document.body).append(this.binds, this.watermark);
   }
@@ -75,7 +76,6 @@ export class DevRuntime implements DevHooks {
   get focusPid(): number { return this.coreTarget?.target ?? this.pid; }
   get peekState(): string { return this.returning ? 'Returning' : this.peekAnchor ? 'Anchor set' : 'Inactive'; }
   get autoStopState(): string { return this.autoStopText; }
-  get shotLog(): readonly string[] { return this.logs; }
   get resolverInfo(): string {
     if (this.coreTarget) { const c = this.policy, r = this.coreResolver.resolve(this.coreTarget.record, c.hvh.feedback.resolver && c.skeet.resolver.mode === 'adaptive', undefined, c.hvh.resolverPolicy); return `${r.state} · ${r.pattern} · ${this.coreTarget.source} · ${Math.round(r.confidence * 100)}% confidence · ${Math.round(this.coreTarget.safety * 100)}% safety`; }
     return 'Awaiting a target';
@@ -94,7 +94,7 @@ export class DevRuntime implements DevHooks {
   private get active(): boolean { return this.dev.active && this.session?.mode.id === 'hvh'; }
   private get rageTiming(): boolean { return this.policy.rage.aim.enabled; }
   private get playing(): boolean { return this.active && this.dev.input.active && !this.dev.menuOpen && this.session!.local.alive && !this.session!.local.car; }
-  attach(session: GameSession): void { this.session = session; this.debug3d = new DevDebug3D(session, this.coreResolver, () => this.coreTarget); this.reset(); this.dev.sessionStarted(); }
+  attach(session: GameSession): void { this.session = session; this.debug3d = new DevDebug3D(session, this.coreResolver, () => this.coreTarget, this.dev.hvhDebugFeed); this.reset(); this.dev.sessionStarted(); }
   detach(session: GameSession): void {
     if (this.session !== session) return;
     session.setSkeetVisuals(null);
@@ -107,12 +107,11 @@ export class DevRuntime implements DevHooks {
   private reset(): void {
     this.pid = 0; this.acquiredAt = this.switchingUntil = 0;
     this.peekAnchor = null; this.returning = this.peekHeld = false;
-    this.logs.length = 0; this.info.hidden = true;
     this.playerRules.clear();
     this.coreResolver.clear(); this.coreTarget = null; this.coreReady = this.coreScoped = false; this.coreScanAt = -Infinity; this.coreShot = undefined;
     this.peekForecast = null; this.peekForecastAt = this.autoStopShotAt = -Infinity; this.autoStopText = 'Inactive';
     this.binds.hidden = this.watermark.hidden = true; this.dev.input.assistedAds = false;
-    this.diagnostics = { target: 'No target', damage: 0, chance: 0, state: 'Idle' };
+    this.diagnostics = { damage: 0, chance: 0, state: 'Idle' };
   }
   applyServerMods(): void {
     if (!this.session) return;
@@ -137,7 +136,6 @@ export class DevRuntime implements DevHooks {
     }
   }
 
-  /** Called after movement, remote interpolation and the camera have updated for this frame. */
   wantsFire(now = performance.now()): boolean {
     const session = this.session, c = this.policy, a = c.rage.aim, trigger = c.legit.trigger;
     if (session?.mode.id === 'hvh') {
@@ -158,11 +156,11 @@ export class DevRuntime implements DevHooks {
         matrix:buildHvhMatrix(target.record.origin,h.yaw,1-target.record.crouch*0.3,target.record.pitch)}));
       const estimate = hvhHitchance(w.def,eye,direction,buildHvhMatrix(target.record.origin,target.yaw,1-target.record.crouch*0.3,target.record.pitch),
         session.horizontalSpeed(),!session.local.onGround,this.dev.input.aiming || this.dev.input.assistedAds,session.collision,
-        c.hvh.aim.autowall && session.mode.wallbang ? softBoxTest(session.map) : undefined,32,w.heat,hypotheses);
+        c.hvh.aim.autowall && session.mode.wallbang ? softBoxTest(session.map) : undefined,32,w.heat,hypotheses,target.record.armor);
       const overridden=this.keyHeld(c.hvh.aim.overrideKey,false);
       const requiredDamage = !overridden && c.hvh.aim.hpRelative >= 0 ? target.record.hp+c.hvh.aim.hpRelative
         : Math.min(target.record.hp,overridden ? c.hvh.aim.damageOverride : c.hvh.aim.minDamage);
-      const damage = afterArmor(estimate.damage,target.record.armor);
+      const damage = estimate.damage;
       const state = damage+1e-9 < requiredDamage ? 'Waiting for damage'
         : estimate.chance+1e-9 < (session.local.onGround ? c.hvh.aim.hitchance : c.hvh.aim.airHitchance)/100 ? 'Waiting for accuracy' : 'Ready';
       Object.assign(this.diagnostics, { damage: Math.round(damage), chance: Math.round(estimate.chance*100), state });
@@ -174,16 +172,12 @@ export class DevRuntime implements DevHooks {
     if (!this.active) return;
     this.autoStopShotAt = performance.now();
     if (this.peekAnchor && this.peekHeld) { this.returning = true; this.peekReturnAt = performance.now(); }
-    const d = this.diagnostics;
     if (session.mode.id === 'hvh' && assisted && this.coreTarget) {
       const c = this.coreTarget;
       this.coreShot = { target: c.target, recordT: c.record.t, source: c.source, yaw: c.yaw, safety: c.safety };
       this.extensions.shot(this.coreShot);
-      this.logs.unshift(`#${session.weapons.shotSeq} ${c.source} · ${c.group} · ${Math.round(c.safety * 100)}% safe · ${Math.round(c.chance * 100)}% chance`);
-      this.logs.length = Math.min(this.logs.length, 5); this.coreScanAt = -Infinity; return;
+      this.coreScanAt = -Infinity;
     }
-    const text = `${session.weapons.def.name} → ${d.target} · ~${d.damage} HP / ${d.chance}%`;
-    this.logs.unshift(text); if (this.logs.length > 5) this.logs.pop();
   }
   onServerShot(session: GameSession, shot: ShotEvent): void {
     this.overlay.sound(shot);
@@ -193,8 +187,7 @@ export class DevRuntime implements DevHooks {
         this.extensions.result(a);
         this.coreResolver.feedback(a.target, a.source, a.reason, session.serverNow(), a.headshot === true, a.recordT);
       }
-      this.logs.unshift(`#${shot.shot} ${a?.reason ?? 'FIRED'} · ${shot.burst === 2 ? 'DT burst · ' : shot.hidden ? 'HS concealed · ' : ''}${a ? `${Math.round(a.damage)} damage` : `${shot.burst ?? 1} round`}`);
-      this.logs.length = Math.min(this.logs.length, 5); this.coreScanAt = -Infinity; return;
+      this.coreScanAt = -Infinity;
     }
   }
   modifyFrame(session: GameSession, frame: InputFrame): InputFrame {
@@ -202,7 +195,9 @@ export class DevRuntime implements DevHooks {
     const c = this.policy, s = session.local.state;
     const out = this.extensions.command({ ...frame, invert: this.keyHeld(c.hvh.invertKey, false) });
     const core = c.hvh.core ?? defaultHvhCore();
-    if (session.mode.id === 'hvh' && core.fakeDuck && core.fakeLag > 1) out.crouch = frame.seq % (core.fakeLag + 1) < (core.fakeLag + 1) / 2;
+    // Same engine-scoped choke cap as the command choker, so a stored 13/14 never changes legacy rooms.
+    const duckLag = Math.min(core.fakeLag, session.local.hvhV2 ? LATE_CSGO.maxChoke : LEGACY_MAX_CHOKE);
+    if (session.mode.id === 'hvh' && core.fakeDuck && duckLag > 1) out.crouch = frame.seq % (duckLag + 1) < (duckLag + 1) / 2;
     const now = performance.now();
     const moving = frame.forward !== 0 || frame.right !== 0;
     if (c.legit.move.jumpAssist) {
@@ -328,7 +323,7 @@ export class DevRuntime implements DevHooks {
       this.coreTarget = next; this.pid = next?.target ?? 0;
     }
     const target = this.coreTarget;
-    if (!target) { this.coreReady = false; this.coreScoped = false; this.diagnostics = { target: 'No valid candidate', damage: 0, chance: 0, state: this.peekForecast ? 'Preparing for predicted peek' : 'Scanning' }; return; }
+    if (!target) { this.coreReady = false; this.coreScoped = false; this.diagnostics = { damage: 0, chance: 0, state: this.peekForecast ? 'Preparing for predicted peek' : 'Scanning' }; return; }
     const bodyRule = this.playerRule(target.target).body;
     if (bodyRule && target.group === 'head') { this.coreReady = false; this.coreScanAt = -Infinity; return; }
     this.coreScoped = session.weapons.def.scope && (this.coreScoped || target.scope);
@@ -338,7 +333,7 @@ export class DevRuntime implements DevHooks {
     const stopLimit = stop.kind === 'slowwalk' ? PLAYER.speed*moveSpeedFor(session.weapons.weapon)*PLAYER.slowWalkSpeed+0.1 : 0.5;
     this.coreReady = stable && !target.scope && !target.stop && (stop.kind === 'off' || session.horizontalSpeed() <= stopLimit);
     // Both manual and automatic assisted shots use shot angles; the view stays under player control.
-    this.diagnostics = { target: session.remotes.players.get(target.target)?.info.name ?? 'Opponent', damage: Math.round(target.damage),
+    this.diagnostics = { damage: Math.round(target.damage),
       chance: Math.round(target.chance * 100), state: target.scope ? 'Scoping' : !stable ? 'Acquiring target' : this.coreReady ? 'Ready' : stop.kind==='slowwalk' ? 'Slow walking for accuracy' : 'Waiting for accuracy' };
   }
   recoilScale(): number { return 1; }
@@ -355,8 +350,6 @@ export class DevRuntime implements DevHooks {
   afterFrame(session: GameSession): void {
     if (this.playing && session.mode.id === 'hvh') this.extensions.render();
     const skeet = this.active && this.dev.panelId === 'skeet';
-    this.binds.hidden = !skeet || !this.dev.config.skeet.indicators.binds;
-    this.watermark.hidden = !skeet || !this.dev.config.skeet.indicators.watermark;
     const native=skeet ? this.dev.config.skeet.native : null;
     if(this.nativeRenderValues!==native){this.nativeRenderValues=native;this.styledPlayers.clear();}
     const weaponChams=nativeOn(native,'Visuals.ColoredModels.weapons');
@@ -375,21 +368,20 @@ export class DevRuntime implements DevHooks {
     session.projectiles.setGlow(nativeOn(native,'Visuals.Other.glowGrenades') ? nativeColor(native!,'Color.Other.glowGrenades') : null,nativeValue(native,'Color.Other.glowGrenades_3',1));
     this.debug3d?.update(this.active ? this.dev.config : null);
     this.overlay.render(this.active ? session : null, this);
-    this.info.hidden = !this.active || !(this.dev.config.hvh.feedback.targetInfo || this.dev.config.hvh.feedback.shotLog || (skeet && this.dev.config.skeet.indicators.resolver));
-    if (performance.now()-this.lastInfoAt<150) return;
-    this.lastInfoAt=performance.now();
+    this.renderSkeetHud(skeet, performance.now());
+  }
+  /** The Skeet watermark and keybind list (`skeet` = an active Skeet HvH session); text refreshes at most every 150 ms. */
+  renderSkeetHud(skeet: boolean, now: number): void {
+    this.binds.hidden = !skeet || !this.dev.config.skeet.indicators.binds;
+    this.watermark.hidden = !skeet || !this.dev.config.skeet.indicators.watermark;
+    if (now-this.lastInfoAt<150) return;
+    this.lastInfoAt=now;
     if (!this.watermark.hidden) this.watermark.textContent = `skeet · chicken hvh · ${Math.round(this.dev.fps())} fps · ${this.dev.ping() ?? '—'} ms`;
-    const c=this.dev.config.hvh, d=this.diagnostics;
-    const charge=Math.round((session.local.server.hvhCharge??0)*100);
-    const stopText = this.policy.hvh.movement.autoStop ? `\n${this.autoStopText}` : '';
-    const lines=[c.feedback.targetInfo ? `${d.target} · ~${d.damage} HP · ${d.chance}%\n${d.state} · ${this.peekState}${stopText}\n${c.exploit === 'off' ? 'EXPLOIT OFF' : c.exploit === 'doubleTap' ? 'DOUBLE TAP' : 'HIDE SHOTS'} · ${session.weapons.exploitState(performance.now())} · ${charge}% charge` : '', skeet && this.dev.config.skeet.indicators.resolver ? this.resolverInfo : '', c.feedback.shotLog ? this.logs.slice(0,3).join('\n') : ''].filter(Boolean);
     if (!this.binds.hidden) {
       const h = this.dev.config.hvh, active = (key: string) => this.keyHeld(key, false) ? 'active' : 'hold';
       this.binds.textContent = ['keybinds', `body aim · ${active(h.aim.bodyKey)}`, `damage override · ${active(h.aim.overrideKey)}`,
-        `slow walk · ${this.dev.input.isDown('ShiftLeft') || this.dev.input.isDown('ShiftRight') ? 'active' : 'hold Shift'}`, `auto peek · ${h.movement.peekAssist ? this.peekState : 'off'}`, `invert · ${active(h.invertKey)}`].join('\n');
+        `slow walk · ${this.dev.input.isDown('ShiftLeft') || this.dev.input.isDown('ShiftRight') ? 'active' : 'hold Shift'}`, `auto peek · ${h.movement.peekAssist ? this.peekState : 'off'}`, `invert · ${active(h.invertKey)}`, `defensive · ${Object.values(h.v2AntiAim.defensive).some((d) => d.enabled) ? 'on' : 'off'}`].join('\n');
     }
-    const key=lines.join('\n');
-    if(key!==this.infoKey){this.infoKey=key;this.info.textContent=key;}
   }
   private chamsFor(slot: string, n: Readonly<Record<string,number>>, kind: number, color: string): THREE.MeshStandardMaterial | THREE.MeshBasicMaterial {
     const key=`${slot}/${kind}`;let m=this.chams.get(key);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { MODES, SIM_DT, TRAINING_GUNS, TRAINING_KNIVES, WEAPONS, isMelee } from '@game/shared';
+import { HVH_MAINS, HVH_PISTOLS } from '@game/shared/hvh/v2';
 import { createRoom } from '../src/rooms/modes';
 import type { TrainingRoom } from '../src/rooms/TrainingRoom';
 import { addPlayer, fakeIo } from './helpers';
@@ -85,7 +86,8 @@ describe('Training', () => {
         assert.equal(s.me.info.loadout.length, 2);
         assert.equal(s.me.info.loadout.filter((w) => isMelee(w)).length, 1);
       }
-      assert.equal(TRAINING_GUNS.length + TRAINING_KNIVES.length, Object.keys(WEAPONS).length, 'every weapon in the game');
+      // Every weapon except the HvH-only CS:GO arsenal.
+      assert.equal(TRAINING_GUNS.length + TRAINING_KNIVES.length, Object.keys(WEAPONS).length - HVH_MAINS.length - HVH_PISTOLS.length, 'every weapon in the game');
       s.me.eggs = s.me.smokes = 0;
       assert.equal(s.room.give(s.me, { grenade: 'egg' }), null);
       assert.equal(s.room.give(s.me, { grenade: 'smoke' }), null);

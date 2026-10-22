@@ -88,6 +88,11 @@ export interface MapDef {
   nav?: readonly { x: number; y?: number; z: number; place?: string }[];
   /** Imported navigation adjacency; remaining event areas use visibility links. */
   navLinks?: readonly (readonly number[])[];
+  /**
+   * Every navLinks link was checked walkable against this map's collision when the data was made
+   * (tools/prepare_mirage.ts; shared/test/maps.test.ts keeps it true), so bots skip the check.
+   */
+  navLinksChecked?: boolean;
   /** Lights in the level (looks only): lanterns at height `y`, or a campfire. */
   lamps?: readonly MapLamp[];
   /** Sealed event levels inside the map (Zombie Apocalypse Crystal Hunt). */

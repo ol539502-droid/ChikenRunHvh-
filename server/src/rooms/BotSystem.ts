@@ -6,6 +6,7 @@ import {
   SNAPSHOT_RATE,
   SOURCE_MOVE,
   WEAPONS,
+  type WeaponId,
   buildNavGraph,
   chestPoint,
   clamp,
@@ -25,6 +26,7 @@ import {
   type Team,
 } from '@game/shared';
 import { DEFAULT_RAGE, scanRage, unpackPlayer, defaultSkeetAntiAim, hvhWeapon, type ObservableRecord, type ShotCandidate } from '@game/shared';
+import { hammerTicks, stepHammerHold } from '@game/shared/hvh/v2';
 import type { BotGoal, GameRoom } from './GameRoom';
 import type { ServerPlayer } from './ServerPlayer';
 
@@ -51,6 +53,9 @@ interface Brain {
   hvhAnchor?: Vec3;
   hvhNextObserve?: number;
   hvhObserved?: number[];
+  /** The R8 hammer: commands sent in the current trigger hold (stepHammerHold, as the server counts), and the gun it is on. */
+  hvhHammerHold?: number;
+  hvhHammerWeapon?: WeaponId;
   p: ServerPlayer;
   seq: number;
   shot: number;
@@ -83,12 +88,20 @@ function randomAppearance(): Appearance {
   return { skin: pick(keys('skin')), hat: Math.random() < 0.6 ? pick(keys('hat')) : 'none', beak: pick(keys('beak')), shoes: Math.random() < 0.5 ? pick(keys('shoes')) : 'none' };
 }
 
+/** Hitchance spread samples per estimate for bot scans (players' rage uses the default 32). */
+const HVH_BOT_SAMPLES = 12;
+
 /** Server-side AI chickens. They play through the same input/fire/throw paths as humans. */
 export class BotSystem {
   private readonly room: GameRoom;
   private readonly brains = new Map<number, Brain>();
   /** Waypoint links for maps that have them, built on first use. */
   private nav: NavGraph | null = null;
+  /**
+   * The one bot that may run an HvH rage scan this tick (scans are costly on big maps): the most
+   * overdue one, so when the server runs slow every bot's scans slow down evenly and none starve.
+   */
+  private hvhScanner: Brain | null = null;
   private usedNames = new Set<string>();
 
   constructor(room: GameRoom) {
@@ -143,9 +156,10 @@ export class BotSystem {
   }
 
   /** Removes one bot (to make room for a human), from `team` if given and it has one. */
-  removeOne(team: Team = 0): boolean {
-    const brains = [...this.brains.values()];
-    const last = (team ? brains.filter((b) => b.p.info.team === team) : brains).pop();
+  /** Removes the newest bot (of `team`, when given); with `deadFirst`, the newest dead one if any bot is dead. */
+  removeOne(team: Team = 0, deadFirst = false): boolean {
+    const brains = [...this.brains.values()].filter((b) => !team || b.p.info.team === team);
+    const last = (deadFirst ? brains.filter((b) => !b.p.alive).pop() : undefined) ?? brains.pop();
     if (!last) return false;
     this.brains.delete(last.p.pid);
     this.usedNames.delete(last.p.info.name.replace('🤖 ', ''));
@@ -158,6 +172,12 @@ export class BotSystem {
   }
 
   update(now: number): void {
+    this.hvhScanner = null;
+    // Only living bots reach thinkHvh's scan; a dead one must not take the slot.
+    if (this.room.mode.id === 'hvh') for (const b of this.brains.values()) {
+      const next = b.hvhNextScan ?? 0;
+      if (b.p.alive && now >= next && (!this.hvhScanner || next < (this.hvhScanner.hvhNextScan ?? 0))) this.hvhScanner = b;
+    }
     for (const b of this.brains.values()) {
       if (!this.room.players.has(b.p.pid)) {
         this.brains.delete(b.p.pid);
@@ -355,9 +375,10 @@ export class BotSystem {
       }
     }
     const records = (b.hvhObserved ?? []).flatMap(pid => p.resolver.records(pid, now));
-    if (now >= (b.hvhNextScan ?? 0)) {
+    // A due scan waits while another bot scans this tick; with nine bots that is still every ~150 ms.
+    if (b === this.hvhScanner && now >= (b.hvhNextScan ?? 0)) {
       b.hvhNextScan = now + 150;
-      b.hvhCandidate = scanRage({ now, eye, w: hvhWeapon(WEAPONS[p.weapon]), heat: p.weaponHeat, speed: p.state.horizontalSpeed, airborne: !p.state.onGround, ads: p.aiming,
+      b.hvhCandidate = scanRage({ samples: HVH_BOT_SAMPLES, now, eye, w: hvhWeapon(WEAPONS[p.weapon]), heat: p.weaponHeat, speed: p.state.horizontalSpeed, airborne: !p.state.onGround, ads: p.aiming,
         world: this.room.world, records, resolver: p.resolver, currentTarget: b.hvhCandidate?.target,
         settings: { ...DEFAULT_RAGE, hitchance: 0.6, maxRecords: 2, preferBodyBelow: 0.5, bodyAfterMisses: 2, body: 'lethal' } });
     }
@@ -387,15 +408,21 @@ export class BotSystem {
     const yaw = c ? Math.atan2(-c.direction.x, -c.direction.z) : p.lookYaw;
     const frame: InputFrame = { seq: ++b.seq, forward: -Math.sin(yaw) * x - Math.cos(yaw) * z,
       right: Math.cos(yaw) * x - Math.sin(yaw) * z, jump: jump && (!p.state.onGround || !p.state.jumpHeld), yaw, pitch: c ? Math.asin(c.direction.y) : 0 };
-    this.room.handleInput(p, frame);
+    // The R8 holds the trigger on a target for hammerTicks commands before the shot (the server counts the same commands).
+    const hammer = hammerTicks(WEAPONS[p.weapon]);
+    const pulling = hammer > 0 && c !== null;
+    b.hvhHammerHold = stepHammerHold(b.hvhHammerWeapon === p.weapon ? b.hvhHammerHold ?? 0 : 0, pulling, WEAPONS[p.weapon]);
+    b.hvhHammerWeapon = p.weapon;
+    this.room.handleInput(p, pulling ? { ...frame, intent: { trigger: true } } : frame);
     if (p.mag <= 0) { this.room.handleReload(p); return; }
     if (c?.scope) p.aiming = true;
     if (c && !c.stop && !c.scope && now - c.record.t <= 300 && p.state.horizontalSpeed < 0.5 && !p.reloadUntil
-      && now >= (b.hvhReturnUntil ?? 0) && now >= p.switchReadyAt && p.resource.playerTick >= p.resource.nextAttackTick) {
+      && now >= (b.hvhReturnUntil ?? 0) && now >= p.switchReadyAt && p.resource.playerTick >= p.resource.nextAttackTick
+      && (hammer === 0 || b.hvhHammerHold - 1 >= hammer)) {
       const direction = normalize({ x: c.point.x - eye.x, y: c.point.y - eye.y, z: c.point.z - eye.z });
       this.room.handleFire(p, { shot: ++b.shot, command: frame.seq, weapon: p.weapon, dx: direction.x, dy: direction.y, dz: direction.z,
         t: c.record.t, aiming: p.aiming, intent: { target: c.target, source: c.source, recordT: c.record.t, yaw: c.yaw } });
-      b.hvhReturnUntil = now + 400; b.hvhNextScan = 0;
+      b.hvhReturnUntil = now + 400; b.hvhNextScan = 0; b.hvhHammerHold = 0;
     }
   }
 
@@ -440,7 +467,7 @@ export class BotSystem {
   private nextStep(b: Brain, goal: BotGoal, now: number): NavPoint {
     const p = b.p;
     const world = this.room.world;
-    if (!this.nav && this.room.map.nav) this.nav = buildNavGraph(this.room.map.nav, world, this.room.map.navLinks);
+    if (!this.nav && this.room.map.nav) this.nav = buildNavGraph(this.room.map.nav, world, this.room.map.navLinks, this.room.map.navLinksChecked);
     const moved = !b.pathGoal || Math.hypot(b.pathGoal.x - goal.x, b.pathGoal.z - goal.z) > 2;
     if (moved || now >= b.nextPath || b.path.length === 0) {
       const from = { x: p.state.x, y: p.state.y, z: p.state.z };

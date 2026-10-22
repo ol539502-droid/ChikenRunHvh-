@@ -93,9 +93,11 @@ export function openSpots(starts: readonly NavPoint[], world: CollisionWorld, ha
   return out;
 }
 
-export function buildNavGraph(points: readonly NavPoint[], world: CollisionWorld, importedLinks?: readonly (readonly number[])[]): NavGraph {
+export function buildNavGraph(points: readonly NavPoint[], world: CollisionWorld, importedLinks?: readonly (readonly number[])[], linksChecked = false): NavGraph {
   // Imported links (Mirage's nav) are kept only where a chicken can still walk them straight.
-  const links: number[][] = points.map((_, i) => (importedLinks?.[i] ?? []).filter((j) => walkable(points[i]!, points[j]!, world)));
+  // linksChecked: the map data was made with every link already walked (MapDef.navLinksChecked).
+  const links: number[][] = points.map((_, i) => linksChecked ? [...(importedLinks?.[i] ?? [])]
+    : (importedLinks?.[i] ?? []).filter((j) => walkable(points[i]!, points[j]!, world)));
   for (let i = 0; i < points.length; i++) {
     if (i < (importedLinks?.length ?? 0)) continue;
     for (let j = i + 1; j < points.length; j++) {

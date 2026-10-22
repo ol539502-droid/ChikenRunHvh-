@@ -1911,6 +1911,13 @@ code {
 .buy-foot small { margin-left: auto; font-size: 11px; color: #bbb9ad; }
 .buy-status { color: var(--buy-gold); }
 .buy-status.bad { color: #f4a08f; }
+/* v2 HvH: two columns (main, pistol), no money, no preview. */
+.hvh-buy .buy-window { width: min(520px, 100%); height: auto; }
+.hvh-buy .buy-head { width: calc(100% - 36px); grid-template-columns: 1fr auto; }
+.hvh-buy .buy-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 4px; }
+/* Freeze time's auto-open: the world stays visible and clickable around the window. */
+.hvh-buy.passive { pointer-events: none; background: none; backdrop-filter: none; place-items: end center; }
+.hvh-buy.passive .buy-window { pointer-events: auto; }
 @media (max-width: 900px) {
   .buy-overlay { padding: 3vh 2vw; }
   .buy-head { width: 76%; }

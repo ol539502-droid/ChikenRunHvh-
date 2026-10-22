@@ -53,7 +53,7 @@ describe('guide-driven simulation contracts', () => {
       } });
     const command = hooks.command({seq: 1, forward: 0, right: 0, yaw: 0.5, pitch: 0, jump: false});
     assert.deepEqual([command.seq, command.yaw, command.forward, command.right], [1, 0.5, 1, -1]);
-    const own = hooks.antiAim(defaultHvhLoadout()); assert.equal(own.antiAim.desync, 58); assert.equal(own.core?.fakeLag, 12);
+    const own = hooks.antiAim(defaultHvhLoadout()); assert.equal(own.antiAim.desync, 58); assert.equal(own.core?.fakeLag, 14);
     let calls = 0; hooks.register({id: 'broken', onRender() { calls++; throw Error('bad callback'); }});
     hooks.render(); hooks.render(); assert.equal(calls, 1); assert.equal(hooks.errors.length, 1);
   });

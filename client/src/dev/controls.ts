@@ -23,7 +23,9 @@ export type Control =
   | (Base & { type: 'color'; path: string })
   | (Base & { type: 'buttons'; items: { label: string; run: () => void; tone?: 'primary' | 'danger'; disabled?: () => boolean }[] })
   | (Base & { type: 'info'; value: () => string })
-  | (Base & { type: 'custom'; render: () => HTMLElement & { refresh?: () => void } });
+  | (Base & { type: 'custom'; render: () => HTMLElement & { refresh?: () => void } })
+  /** A row of icons; the selected value's controls show beneath it (one open at a time). */
+  | (Base & { type: 'picker'; options: { value: string; label: string; icon: string }[]; bind: Binding<string>; sections: (value: string) => Control[] });
 
 export interface Section {
   title: string;
@@ -199,6 +201,35 @@ export function renderControl(dev: Pick<Dev, 'get' | 'set' | 'click'>, c: Contro
     case 'custom': {
       const el = c.render();
       return { el, refresh: () => el.refresh?.() };
+    }
+    case 'picker': {
+      const icons = c.options.map((o) => {
+        const b = h('button', { type: 'button', class: 'dev-picker-icon', title: o.label, 'aria-label': o.label }, o.icon);
+        b.addEventListener('click', () => {
+          if (c.bind.get() === o.value) return;
+          c.bind.set(o.value);
+          dev.click();
+          refresh();
+        });
+        return { b, o };
+      });
+      const body = h('div', { class: 'dev-picker-body' });
+      let shown: string | undefined, children: Rendered[] = [];
+      const el = h('div', { class: 'dev-row picker' }, label(c.label, c.hint), h('div', { class: 'dev-picker-row', role: 'group', 'aria-label': c.label }, ...icons.map((x) => x.b)), body);
+      const refresh = () => {
+        const value = c.bind.get();
+        for (const { b, o } of icons) {
+          b.classList.toggle('active', o.value === value);
+          b.setAttribute('aria-pressed', String(o.value === value));
+        }
+        if (value !== shown) {
+          shown = value;
+          children = c.sections(value).map((child) => renderControl(dev, child, ranges, choices));
+          body.replaceChildren(...children.map((r) => r.el));
+        } else for (const r of children) r.refresh();
+      };
+      refresh();
+      return { el, refresh };
     }
   }
 }

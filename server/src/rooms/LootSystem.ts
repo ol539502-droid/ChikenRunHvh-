@@ -41,10 +41,10 @@ const WEIGHTS: [PickupKind, number][] = [
 ];
 
 /** @param eggs whether eggs may come out (not in weapon-restricted modes like Knife Fight) */
-function randomPickup(eggs: boolean): PickupKind {
+function randomPickup(eggs: boolean, random: () => number): PickupKind {
   const weights = eggs ? WEIGHTS : WEIGHTS.filter(([kind]) => kind !== 'eggs');
   const total = weights.reduce((sum, [, w]) => sum + w, 0);
-  let r = Math.random() * total;
+  let r = random() * total;
   for (const [kind, w] of weights) {
     r -= w;
     if (r < 0) return kind;
@@ -84,7 +84,7 @@ export class LootSystem {
 
   /** A kill: a random pickup falls to the ground where the victim was. */
   dropBonus(at: Vec3, now: number): void {
-    this.dropAt(at, randomPickup(!this.room.mode.weapons), now, BONUS.lifetimeMs);
+    this.dropAt(at, randomPickup(!this.room.mode.weapons, this.room.random), now, BONUS.lifetimeMs);
   }
 
   /** Drops `kind` where `at` is (it lands on whatever is below), for `lifetimeMs`. */
@@ -127,7 +127,7 @@ export class LootSystem {
     const b = this.boxes[id];
     if (!b || b.phase !== 0) return;
     b.phase = 1;
-    b.pickup = randomPickup(!this.room.mode.weapons);
+    b.pickup = randomPickup(!this.room.mode.weapons, this.room.random);
     b.until = now + LOOT.pickupLifetimeMs;
     this.emit(b);
   }

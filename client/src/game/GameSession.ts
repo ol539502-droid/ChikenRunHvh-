@@ -41,6 +41,8 @@ import {
   rayChicken,
   rayHvhChicken, CommandChoker, NetworkSimulator, defaultHvhCore, fakeLagTicks,
   hvhSpread,
+  type WeaponDef,
+  exploitMode,
   raycastPenetrating,
   raycastWorld,
   softBoxTest,
@@ -95,6 +97,11 @@ import {
   isPowerUp,
 } from '@game/shared';
 import type { Network } from '../net/Network';
+import { CommandClock, NO_SIGHT, TickClock, commandIntent, shotReference } from '../hvh/PredictedTickbase';
+import { SmoothedPitch, SmoothedYaw, SpectateTarget } from '../hvh/Spectate';
+import { HVH_ROUNDS, LATE_CSGO, enemyVisible, snapshotSightTargets, type SightTarget } from '@game/shared/hvh/v2';
+import { HitLog, initHvhV2Ui } from '../ui/hvh/HitLog';
+import { HvhBuyMenu } from '../ui/hvh/HvhBuyMenu';
 import { nextGrenade, grenadeCount, slotItems, stepSlot, weaponIndexForKey, type HeldGrenade, type SlotItem } from './weaponSlots';
 import { getSettings } from '../settings';
 import { BuyMenu } from '../ui/BuyMenu';
@@ -192,6 +199,13 @@ export class GameSession {
   private readonly commandChoker = new CommandChoker();
   private commandNetwork: NetworkSimulator<readonly InputFrame[]> | null = null;
   private networkKey = '';
+  /** Server tick being displayed (render time), sent as each command's clientTick. */
+  private readonly tickClock = new TickClock();
+  /** HvH: the latest snapshot's `t` and the enemies it shows us, which v2 sight is predicted from (R56). */
+  private sightView: { t: number; enemies: SightTarget[] } | null = null;
+  private readonly commandClock = new CommandClock();
+  /** Seq of the command that carries the latest hitscan shot (the `fire` message references it). */
+  private shotCommand: number | null = null;
   readonly room: RoomInfo;
   readonly selfPid: number;
   readonly mode: ModeDef;
@@ -227,6 +241,10 @@ export class GameSession {
   private round: RoundState | null;
   private money: number;
   private readonly buyMenu: BuyMenu | null;
+  /** v2 HvH rounds: the main + pistol pick (open at freeze, closed at live). */
+  private readonly hvhBuy: HvhBuyMenu | null;
+  /** The HvH buy menu took the mouse (opened with B), so closing it takes it back. */
+  private hvhBuyReleased = false;
   /** Zombie Apocalypse: the wave panel, shop and game-over screen. */
   private readonly zombieHud: ZombieHud | null;
   private night: ZombieNight | null = null;
@@ -274,6 +292,11 @@ export class GameSession {
   private wasOnGround = true;
   private deathPos: THREE.Vector3 | null = null;
   private respawnAt = 0;
+  /** v2 HvH rounds (R63): the living teammate a dead player watches. */
+  private readonly spectate = new SpectateTarget();
+  private readonly spectateYaw = new SmoothedYaw();
+  private readonly spectatePitch = new SmoothedPitch();
+  private spectated: RemotePlayer | null = null;
   private lastResultsKey = '';
   /** First-person gun, attached to the camera. */
   private readonly viewmodel: ViewModel;
@@ -282,6 +305,7 @@ export class GameSession {
   private readonly lastViewPos = new THREE.Vector3();
   private readonly tmp = new THREE.Vector3();
   private readonly camDir = new THREE.Vector3();
+  hitLog: HitLog | null = null;
 
   constructor(ctx: SessionContext) {
     this.ctx = ctx;
@@ -344,6 +368,13 @@ export class GameSession {
       this.buyMenu.onBuy = (item) => this.buy(item);
       this.buyMenu.onClose = () => this.closeBuyMenu();
     }
+    // Only v2 HvH rooms with rounds send a round on join.
+    this.hvhBuy = this.mode.id === 'hvh' && join.round ? new HvhBuyMenu(ctx.hud.root) : null;
+    if (this.hvhBuy) {
+      this.hvhBuy.onPick = (id) => this.hvhPick(id);
+      this.hvhBuy.onClose = () => this.setHvhBuyOpen(false);
+      this.sendHvhPicks();
+    }
     this.trainingMenu = this.mode.training ? new TrainingMenu(ctx.hud.root) : null;
     if (this.trainingMenu) {
       this.trainingMenu.onClose = () => this.toggleTrainingMenu(false);
@@ -383,6 +414,8 @@ export class GameSession {
     for (const s of join.smokes) this.onSmoke(s);
 
     ctx.hud.setRoom(join.room);
+    // Only v2 HvH rooms with rounds send a round on join.
+    if (this.mode.id === 'hvh' && join.round) ctx.hud.setRoundsRule(HVH_ROUNDS);
     ctx.hud.setVisible(true);
     if (this.mode.wallhack) ctx.hud.toast('HvH: everyone sees enemies through walls', 'bad');
     if (this.mode.bomb) ctx.hud.toast(this.self.team === 1 ? 'You are chikenT: plant the bomb on A or B' : 'You are chikenCT: stop the bomb, defuse it with E', 'info');
@@ -433,26 +466,53 @@ export class GameSession {
     this.accumulator += dt;
     while (this.accumulator >= SIM_DT) {
       this.accumulator -= SIM_DT;
-      if (!this.local.alive) continue;
+      if (!this.local.alive) { this.commandClock.reset(); continue; }
+      // v2 clock correction: the server is holding a backlog of our commands; send this tick's later.
+      // Never delay a command that carries a shot.
+      if (this.local.hvhV2 && this.shotCommand !== this.nextSeq && this.commandClock.skip(this.nextSeq)) continue;
       let frame = input.sample(this.nextSeq++);
       if (dev) frame = dev.modifyFrame(this, frame);
       if (this.mode.id !== 'hvh') frame = { ...frame, autoHop: false, subtickStrafe: false };
       // With the bomb out, holding fire plants it (the same as holding E).
       if (this.bombOut && input.firing) frame = { ...frame, use: true };
       if (this.bombHolds(frame)) frame = { ...frame, forward: 0, right: 0, jump: false, crouch: true };
-      this.local.predict(frame, this.collision, hopMaxFor(this.weapons.weapon), moveSpeedFor(this.weapons.weapon));
+      // Melee and projectile weapons never fire a hitscan shot (the server rejects them as 'wrong weapon').
+      const def = this.weapons.def;
+      const hitscan = !def.melee && !def.projectile;
+      const exploit = exploitMode(this.weapons.hvh.exploit, def, this.weapons.mag);
+      // v2: the tickbase action decides the movement (the charging stop, the burst), with the enemy
+      // sight from the eye before this command's step. The choke bit is decided after the step.
+      let sight = NO_SIGHT;
+      const plan = this.mode.id === 'hvh' && this.local.hvhV2
+        ? { intent: commandIntent({ seq: frame.seq, shotSeq: this.shotCommand, hitscan, held: false, exploit }), ctx: sight }
+        : undefined;
+      // R62: in freeze (buy time) the server charges regardless of sight.
+      if (plan && !this.buyTime && this.local.tickbase.needsSight(frame.seq, plan.intent)) plan.ctx = sight = { enemyVisible: this.enemyInSight() };
+      this.local.predict(frame, this.collision, hopMaxFor(this.weapons.weapon), moveSpeedFor(this.weapons.weapon), plan);
       if (this.mode.id === 'hvh') {
         const core = this.weapons.hvh.core ?? defaultHvhCore();
         const key = `${core.latencyMs}/${core.jitterMs}/${core.packetLoss}`;
         if (key !== this.networkKey) { this.networkKey = key; this.commandNetwork = new NetworkSimulator({ latencyMs: core.latencyMs, jitterMs: core.jitterMs, loss: core.packetLoss }, this.selfPid); }
         const speed = this.horizontalSpeed();
         const shooting = input.firing || dev?.wantsFire(now) === true;
-        const choke = fakeLagTicks(core,frame.seq,speed,shooting);
-        const batch = this.commandChoker.push(frame, choke, !input.active || (core.fakeLagBreakOnShot && shooting));
+        // v2 rooms allow the era's choke limit (LATE_CSGO.maxChoke); legacy rooms keep the 12 cap.
+        const maxChoke = this.local.hvhV2 ? LATE_CSGO.maxChoke : undefined;
+        const choke = fakeLagTicks(core,frame.seq,speed,shooting,maxChoke);
+        // Flush rule is unchanged from before v2: a shot flushes only via fakeLagBreakOnShot.
+        const flush = !input.active || (core.fakeLagBreakOnShot && shooting);
+        const intent = commandIntent({
+          seq: frame.seq, shotSeq: this.shotCommand, hitscan,
+          held: this.commandChoker.wouldHold(choke, flush, maxChoke), exploit, trigger: shooting,
+        });
+        if (this.local.hvhV2) this.weapons.commandBuilt(frame.seq, intent.trigger === true);
+        const cmd = this.local.command(frame, intent, this.tickClock.viewedTick(this.serverNow() - INTERP_DELAY_MS), sight);
+        // R56: the server traces this command's sight against the snapshot we predicted it from.
+        if (this.sightView) cmd.sightT = this.sightView.t;
+        const batch = this.commandChoker.push(cmd, choke, flush, maxChoke);
         if (batch.length) this.commandNetwork!.send(batch, now);
       } else net.socket.emit('input', frame);
     }
-    if (this.mode.id === 'hvh') for (const batch of this.commandNetwork?.receive(now) ?? []) for (const frame of batch) net.socket.emit('input', frame);
+    if (this.mode.id === 'hvh') for (const batch of this.commandNetwork?.receive(now) ?? []) for (const frame of batch) net.socket.emit('input', this.local.emitted(frame));
 
     const state = this.local.state;
     if (this.local.alive) {
@@ -525,6 +585,8 @@ export class GameSession {
       this.rig.follow(seat?.position ?? this.local.position, input.yaw-(noRecoil?this.visualKick.yaw:0), input.pitch-(noRecoil?this.visualKick.pitch:0), zoom, dt, scoped, this.local.car !== null, this.local.eyeScale);
       this.local.chicken.setBodyVisible(!(this.rig.firstPerson || (scoped && !this.rig.hvhThirdPerson)));
       this.updateViewmodel(dt, this.rig.firstPerson && !scoped, aiming);
+    } else if (this.spectateTeammate(dt)) {
+      this.updateViewmodel(dt, false);
     } else if (this.deathPos) {
       this.updateViewmodel(dt, false);
       this.rig.orbit(this.deathPos, dt);
@@ -539,7 +601,7 @@ export class GameSession {
 
     // Weapons.
     this.weapons.update(now, this.mode.id === 'hvh'
-      && fakeLagTicks(this.weapons.hvh.core ?? defaultHvhCore(), this.nextSeq - 1, this.horizontalSpeed()) > 0);
+      && fakeLagTicks(this.weapons.hvh.core ?? defaultHvhCore(), this.nextSeq - 1, this.horizontalSpeed(), false, this.local.hvhV2 ? LATE_CSGO.maxChoke : undefined) > 0);
     // In a buggy you can shoot (and throw) but not swing a melee weapon.
     if (!input.firing && !input.aiming) this.grenadeThrowHeld = false;
     // Tell the server what's in hand (it checks we have it); planting needs the bomb out on a site.
@@ -582,13 +644,14 @@ export class GameSession {
       this.updateHud(now, fps, aiming, scoped);
     }
     this.buyMenu?.update(dt);
+    this.updateHvhBuy();
     this.blocks?.tick(now);
     dev?.afterFrame(this, dt);
   }
 
-  /** The buy menu is open (it has the mouse). */
+  /** The buy menu is open (it has the mouse). The HvH menu auto-opened at freeze leaves look and keys to the game. */
   get buyMenuOpen(): boolean {
-    return (this.buyMenu?.open ?? false) || (this.zombieHud?.shopOpen ?? false) || this.zombieOver || (this.trainingMenu?.open ?? false);
+    return (this.buyMenu?.open ?? false) || (this.hvhBuyReleased && (this.hvhBuy?.open ?? false)) || (this.zombieHud?.shopOpen ?? false) || this.zombieOver || (this.trainingMenu?.open ?? false);
   }
   setWeaponTint(color: string | null, style = 0, alpha = 1): void { this.viewmodel.setTint(color,style,alpha); }
 
@@ -678,6 +741,7 @@ export class GameSession {
     hud.setScoreboardVisible(input.scoreboardHeld && this.match.phase !== 'ended');
     if (input.scoreboardHeld) hud.renderScoreboard(this.scoreLines(), this.teamScores, net.ping);
     if (this.match.phase === 'ended' && this.match.endsAt !== null) hud.setResultsCountdown(this.match.endsAt - this.serverNow());
+    if (this.local.hvhV2) this.hitLog?.update();
   }
 
   /** How fast you are going, for weapon spread (a moving buggy shakes your aim like walking). */
@@ -807,6 +871,10 @@ export class GameSession {
           this.toggleBuyMenu();
           break;
         }
+        if (this.hvhBuy) {
+          this.toggleHvhBuy();
+          break;
+        }
         if (this.mode.building && this.local.alive) {
           this.building = !this.building;
           if (!this.building) this.blocks?.showGhost(null, false);
@@ -911,6 +979,23 @@ export class GameSession {
     return { x: s.x, y: s.y + eyeHeightOf(s), z: s.z };
   }
 
+  /**
+   * v2 tickbase sight, as the server's (HvhRoom.enemyInSight, R56): a living enemy in actual line
+   * of sight from our eye, among the enemies of the latest snapshot. The command names that
+   * snapshot (`sightT`) and the server traces the same list, so the two agree.
+   */
+  private enemyInSight(): boolean {
+    return enemyVisible(this.eye(), this.sightView?.enemies ?? [], this.collision);
+  }
+
+  /** v2: the next command carries this shot (intent.fire). Legacy HvH and non-hitscan weapons keep the acked seq. */
+  private markShot(w: WeaponDef): number {
+    const ref = shotReference(this.local.hvhV2 && !w.melee && !w.projectile, this.nextSeq, this.local.server.ack);
+    this.shotCommand = ref.shotSeq;
+    if (ref.shotSeq !== null) this.local.tickbase.shot(ref.shotSeq);
+    return ref.command;
+  }
+
   private fire(aiming: boolean, assisted = false): void {
     const { net, audio, input } = this.ctx;
     const w = this.weapons.def;
@@ -928,7 +1013,7 @@ export class GameSession {
       t: (assisted ? this.ctx.dev?.shotIntent?.()?.recordT : undefined) ?? this.serverNow() - INTERP_DELAY_MS,
       // Weapon requests execute from authoritative movement already acknowledged by the server.
       // Referencing a future choked command kept every shot waiting until its target record expired.
-      command: this.mode.id === 'hvh' ? this.local.server.ack : this.nextSeq - 1,
+      command: this.mode.id === 'hvh' ? this.markShot(w) : this.nextSeq - 1,
       intent: assisted ? this.ctx.dev?.shotIntent?.() : undefined,
       aiming,
     });
@@ -995,9 +1080,9 @@ export class GameSession {
     audio.play(w.id === 'pan' ? 'bonk' : 'meleeHit', hit.point);
   }
 
-  /** ChikenBomb buy time: the server refuses every shot and throw, so we don't pretend to fire either. */
+  /** ChikenBomb buy time (v2 HvH freeze time): the server refuses every shot and throw, so we don't pretend to fire either. */
   private get buyTime(): boolean {
-    return this.mode.bomb === true && this.round?.phase === 'buy';
+    return (this.mode.bomb === true || this.mode.id === 'hvh') && this.round?.phase === 'buy';
   }
 
   /** What's in hand now, as a slot item. */
@@ -1116,7 +1201,7 @@ export class GameSession {
   private thirdPersonCase(weapon: WeaponId, muzzle: Vec3, aim: Vec3, yaw: number, mover: { vx: number; vy: number; vz: number }): void {
     const kind = CASING_FOR[weapon];
     if (!kind) return;
-    const back = weapon === 'sniper' || weapon === 'scout' ? 0.45 : 0.28;
+    const back = weapon === 'sniper' || weapon === 'scout' || weapon === 'ssg08' || weapon === 'scar20' ? 0.45 : 0.28;
     const at = { x: muzzle.x - aim.x * back, y: muzzle.y - aim.y * back + 0.02, z: muzzle.z - aim.z * back };
     const speed = 2.2 + Math.random() * 0.9;
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
@@ -1194,7 +1279,8 @@ export class GameSession {
     if (r.phase === 'buy' && prev?.phase !== 'buy') {
       if (prev?.phase === 'warmup') hud.resetCombatFeedback();
       this.hasKit = false;
-      hud.toast(`Round ${r.round} · buy time: press B`);
+      // v2 HvH rounds: the buy phase is the freeze time.
+      hud.toast(this.mode.bomb ? `Round ${r.round} · buy time: press B` : `Round ${r.round} · freeze time`);
       if (r.bomb.carrier === this.selfPid) hud.toast('💣 You carry the bomb: plant it on A or B', 'good');
     }
     if (r.phase === 'planted' && prev?.phase !== 'planted') {
@@ -1208,9 +1294,12 @@ export class GameSession {
     if (r.phase === 'live' && prev?.bomb.carrier !== this.selfPid && r.bomb.carrier === this.selfPid && prev?.phase === 'live') hud.toast('💣 You picked up the bomb', 'good');
     if (r.phase === 'over' && prev?.phase !== 'over') {
       const won = r.winner === mine;
-      hud.toast(won ? 'Round won! 🎉' : 'Round lost', won ? 'good' : 'bad');
+      // Only v2 HvH rounds can be drawn (winner 0).
+      if (r.winner === 0) hud.toast('Round drawn', 'info');
+      else hud.toast(won ? 'Round won! 🎉' : 'Round lost', won ? 'good' : 'bad');
       audio.play(won ? 'reward' : 'empty');
     }
+    if (this.hvhBuy) this.onHvhRound(r, prev);
     const buying = r.phase === 'warmup' || ((r.phase === 'buy' || r.phase === 'live') && r.buyEndsAt !== null && this.serverNow() < r.buyEndsAt);
     if (!buying && this.buyMenu?.open) this.buyMenu.say('Buy time is over: press B or Esc to play', true);
   }
@@ -1412,6 +1501,75 @@ export class GameSession {
         if (slot >= 0) this.switchWeapon(() => this.weapons.switchTo(slot, performance.now()));
       }
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // v2 HvH buy menu
+  // ---------------------------------------------------------------------------
+
+  /** Whenever a buy window opens, the server gets the remembered pick (a same pick is a no-op). */
+  private onHvhRound(r: RoundState, prev: RoundState | null): void {
+    const window_ = r.phase === 'warmup' || r.phase === 'buy';
+    if (window_ && prev?.phase !== r.phase) this.sendHvhPicks();
+    // Freeze time opens the menu without taking the mouse: 1–4 stay the weapon keys, and B opens it to pick.
+    if (r.phase === 'buy' && prev?.phase !== 'buy') this.setHvhBuyOpen(true);
+    if (!window_) this.setHvhBuyOpen(false);
+  }
+
+  private sendHvhPicks(): void {
+    const { main, pistol } = this.hvhBuy!.model.selected;
+    // A refusal (window closed, picking too fast) leaves the loadout as it was: the menu shows that.
+    for (const id of [main, pistol]) this.ctx.net.socket.emit('buy', id, (res) => {
+      if (!res.ok) this.hvhBuy?.sync(this.weapons.loadout);
+    });
+  }
+
+  private hvhPick(id: WeaponId): void {
+    this.ctx.net.socket.emit('buy', id, (res) => {
+      if (!res.ok) {
+        this.hvhBuy?.sync(this.weapons.loadout);
+        this.hvhBuy?.say(res.error ?? 'You can’t pick that.', true);
+        this.ctx.audio.play('empty');
+        return;
+      }
+      this.hvhBuy?.say(`${WEAPONS[id].name} picked`);
+      this.ctx.audio.play('pickup');
+      // Take the new gun out (playerUpdated already brought the new loadout).
+      const slot = this.weapons.loadout.indexOf(id);
+      if (slot >= 0) this.switchWeapon(() => this.weapons.switchTo(slot, performance.now()));
+    });
+  }
+
+  /** B: open (taking the mouse) during warmup and freeze, or close. */
+  private toggleHvhBuy(): void {
+    if (this.hvhBuy?.open && this.hvhBuyReleased) return this.setHvhBuyOpen(false);
+    // The passive freeze menu reopens with the mouse.
+    if (this.hvhBuy?.open) this.setHvhBuyOpen(false);
+    const phase = this.round?.phase;
+    if (phase !== 'warmup' && phase !== 'buy') return this.ctx.hud.toast('Buying is closed: you can pick at the next freeze time', 'bad');
+    this.setHvhBuyOpen(true, true);
+    this.ctx.audio.play('click');
+  }
+
+  private setHvhBuyOpen(open: boolean, takeMouse = false): void {
+    const menu = this.hvhBuy;
+    if (!menu || menu.open === open) return;
+    menu.setOpen(open, !takeMouse);
+    if (open && takeMouse) {
+      this.hvhBuyReleased = true;
+      this.ctx.input.releaseLock();
+    } else if (!open && this.hvhBuyReleased) {
+      this.hvhBuyReleased = false;
+      void this.ctx.input.requestLock();
+    }
+    this.ctx.onOverlay();
+  }
+
+  private updateHvhBuy(): void {
+    const menu = this.hvhBuy;
+    if (!menu?.open || !this.round) return;
+    menu.setSecondsLeft(this.round.phase === 'warmup' ? null : Math.max(0, Math.ceil(((this.round.endsAt ?? 0) - this.serverNow()) / 1000)));
+    menu.update();
   }
 
   /** What to do about the bomb, for the hint bar. */
@@ -1662,6 +1820,18 @@ export class GameSession {
 
   private bindNetwork(): void {
     this.on('snapshot', (s) => this.onSnapshot(s));
+    this.on('hvhState', (e) => {
+      this.tickClock.sample(e.tick, this.serverNow());
+      this.commandClock.observe(e.queued ?? 0, e.lastAckSeq + (e.queued ?? 0));
+      this.local.onHvhState(e);
+      if (this.local.hvhV2) {
+        initHvhV2Ui(
+          this,
+          () => new HitLog((id) => this.infos.get(Number(id))?.name ?? id, { container: this.ctx.hud.root }),
+          (handler) => this.on('shotVerdict', handler),
+        );
+      }
+    });
     this.on('playerJoined', (info) => this.onPlayerInfo(info));
     this.on('playerUpdated', (info) => this.onPlayerInfo(info));
     this.on('round', (r) => this.onRound(r));
@@ -1760,6 +1930,12 @@ export class GameSession {
     }
     this.remotes.pushSnapshot(snapshot, this.selfPid);
     this.vehicles.pushSnapshot(snapshot.t, snapshot.v);
+    if (this.mode.id === 'hvh') {
+      this.sightView = { t: snapshot.t, enemies: snapshotSightTargets(snapshot.p, (pid) => {
+        const info = this.infos.get(pid);
+        return pid !== this.selfPid && !(info && this.isFriendly(info));
+      }) };
+    }
   }
 
   private onPlayerInfo(info: PlayerInfo): void {
@@ -1866,6 +2042,7 @@ export class GameSession {
     hud.kill(killer, victim, e.cause, e.headshot, this.selfPid, e.flags ?? 0);
 
     if (e.victim === this.selfPid) {
+      this.local.onOwnDeath();
       this.died(killer, e.cause, e.flags ?? 0, e.headshot);
     } else {
       const remote = this.remotes.get(e.victim);
@@ -1909,7 +2086,42 @@ export class GameSession {
     this.ctx.audio.play('poof', p, 0.8);
   }
 
+  /**
+   * v2 HvH rounds (R63): dead in a round, watch a living teammate's view (their public eye angles);
+   * fire cycles to the next teammate, aim back to the previous. False when nobody can be watched,
+   * so the death camera stays. Spectate.ts picks the teammate; a respawn ends it.
+   */
+  private spectateTeammate(dt: number): boolean {
+    const { input } = this.ctx;
+    const phase = this.round?.phase;
+    const before = this.spectated;
+    let next: RemotePlayer | null = null;
+    if (this.mode.id === 'hvh' && this.local.hvhV2 && !this.local.alive && (phase === 'live' || phase === 'over')) {
+      const team = this.self?.team ?? 0;
+      const players = [...this.remotes.players.values()].map((r) => ({ pid: r.info.pid, team: r.info.team, alive: r.alive && !r.culled }));
+      const click = !input.active ? 0 : input.firing && !this.fireWasDown ? 1 : input.aiming && !this.aimWasDown ? -1 : 0;
+      const pid = click === 0 ? this.spectate.update(team, players) : this.spectate.cycle(team, players, click);
+      next = pid === null ? null : this.remotes.players.get(pid) ?? null;
+    }
+    if (before && before !== next) before.chicken.setBodyVisible(true);
+    this.spectated = next;
+    if (!next) return false;
+    if (next !== before) {
+      this.ctx.hud.toast(`Spectating ${next.info.name}`);
+      this.spectateYaw.reset();
+      this.spectatePitch.reset();
+    }
+    // First person: inside their chicken, so hide the body. HvH third person keeps the camera behind them: show it.
+    next.chicken.setBodyVisible(this.rig.hvhThirdPerson);
+    // Their eye yaw and pitch are anti-aimed: smoothed (the pitch kept near level), so jitter and flicks do not shake the view.
+    this.rig.follow(next.position, this.spectateYaw.step(next.yaw, dt), this.spectatePitch.step(next.latest?.pitch ?? 0, dt), 1, dt, true, false, next.scale);
+    return true;
+  }
+
   private respawned(): void {
+    this.spectated?.chicken.setBodyVisible(true);
+    this.spectated = null;
+    this.spectate.reset();
     this.heldGrenade = null;
     this.heldSent = 'gun';
     this.pinPulled = false;
@@ -2070,6 +2282,7 @@ export class GameSession {
     this.viewmodel.dispose();
     this.bombView?.dispose();
     this.buyMenu?.dispose();
+    this.hvhBuy?.dispose();
     this.zombieHud?.dispose();
     this.night?.dispose();
     this.hunt?.dispose();
@@ -2088,6 +2301,8 @@ export class GameSession {
     this.blocks?.dispose();
     this.flags?.dispose();
     this.effects.dispose();
+    this.hitLog?.dispose();
+    this.hitLog = null;
     this.ctx.hud.setVisible(false);
     this.ctx.hud.hideDeath();
   }

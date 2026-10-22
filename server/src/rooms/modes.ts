@@ -2,6 +2,7 @@ import type { GameServer } from '../types';
 import { ArmsRoom } from './ArmsRoom';
 import { BombRoom } from './BombRoom';
 import { CtfRoom } from './CtfRoom';
+import { HvhRoom } from './HvhRoom';
 import { GameRoom, type RoomHooks, type RoomOptions } from './GameRoom';
 import { SandboxRoom } from './SandboxRoom';
 import { TrainingRoom } from './TrainingRoom';
@@ -22,6 +23,8 @@ export function createRoom(io: GameServer, options: RoomOptions, hooks: RoomHook
     case 'zombie':
     case 'backrooms':
       return new ZombieRoom(io, options, hooks);
+    case 'hvh':
+      return new HvhRoom(io, options, hooks);
     case 'training':
       return new TrainingRoom(io, options, hooks);
     default:

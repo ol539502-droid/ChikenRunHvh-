@@ -12,7 +12,7 @@ it('auto-stop options preserve old behavior, round-trip profiles and bound extra
 });
 it('Skeet weapon overrides retain all shared auto-stop options while selecting their own master switch',()=>{
  const c=defaultConfig('skeet');Object.assign(c.hvh.movement,{autoStopSlowWalk:true,autoStopPredict:true,autoStopBetweenShots:false});
- c.skeet.profiles.snipers.enabled=true;c.skeet.profiles.snipers.autoStop=false;
+ c.skeet.profiles.ssg08.autoStop=false;
  const sniper=skeetEffectiveConfig(c,WEAPONS.sniper);assert.equal(sniper.hvh.movement.autoStop,false);assert.equal(sniper.hvh.movement.autoStopSlowWalk,true);
  assert.equal(sniper.hvh.movement.autoStopPredict,true);assert.equal(sniper.hvh.movement.autoStopBetweenShots,false);
  assert.equal(skeetEffectiveConfig(c,WEAPONS.rifle).hvh.movement.autoStop,true);assert.equal(c.hvh.movement.autoStop,false);

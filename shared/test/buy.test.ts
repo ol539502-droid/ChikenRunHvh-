@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { BUY_CATEGORIES, BUY_ITEMS, KNIFE_SKINS, WEAPONS, WEAPON_IDS, isMelee, isSidearm } from '../src/index';
+import { isHvhArsenal } from '../src/hvh/v2/arsenal';
 
 describe('the ChikenBomb buy menu', () => {
   it('uses the five reference columns and separates equipment from grenades', () => {
@@ -9,10 +10,11 @@ describe('the ChikenBomb buy menu', () => {
   });
   it('sells every gun in the game, each in a column', () => {
     const sold = new Set(BUY_ITEMS.map((i) => i.weapon));
-    const guns = WEAPON_IDS.filter((id) => !isMelee(id));
+    const guns = WEAPON_IDS.filter((id) => !isMelee(id) && !isHvhArsenal(id));
     assert.deepEqual(guns.filter((id) => !sold.has(id)), [], 'guns missing from the buy menu');
     for (const item of BUY_ITEMS) assert.ok(BUY_CATEGORIES.some((c) => c.id === item.category), `${item.id} has no column`);
-    for (const id of ['pistol', 'deagle', 'fiveseven', 'dualies', 'silenced', 'revolver', 'mpistol'] as const) assert.ok(isSidearm(id), `${id} is a pistol`);
+    for (const id of ['pistol', 'deagle', 'fiveseven', 'dualies', 'silenced', 'revolver', 'mpistol', 'deserteagle', 'r8'] as const) assert.ok(isSidearm(id), `${id} is a pistol`);
+    assert.ok(!isSidearm('ssg08') && !isSidearm('scar20'));
     assert.ok(!isSidearm('rifle') && !isSidearm('smg'));
   });
 });

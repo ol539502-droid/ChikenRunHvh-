@@ -13,8 +13,8 @@ export type CasingKind = 'ak47' | 'awp' | 'deagle' | 'glock' | 'xm1014' | 'nova'
  */
 export const CASING_FOR: Partial<Record<WeaponId, CasingKind>> = {
   ak47: 'ak47', m4a1: 'ak47', rifle: 'ak47', burst: 'ak47', battle: 'ak47', golden: 'ak47', lmg: 'ak47', minigun: 'ak47',
-  sniper: 'awp', scout: 'awp',
-  deagle: 'deagle',
+  sniper: 'awp', scout: 'awp', ssg08: 'awp', scar20: 'awp',
+  deagle: 'deagle', deserteagle: 'deagle',
   pistol: 'glock', silenced: 'glock', dualies: 'glock', fiveseven: 'glock', mpistol: 'glock', smg: 'glock',
   autoshotgun: 'xm1014',
   shotgun: 'nova',
@@ -29,7 +29,7 @@ export const CYCLE = {
   boltAction: { delayMs: 300, ms: 700 },
 } as const;
 /** Guns worked by hand between shots (the rest cycle themselves; the revolver keeps its cases). */
-export const CYCLE_OF: Partial<Record<WeaponId, 'pump' | 'boltAction'>> = { shotgun: 'pump', sniper: 'boltAction', scout: 'boltAction' };
+export const CYCLE_OF: Partial<Record<WeaponId, 'pump' | 'boltAction'>> = { shotgun: 'pump', sniper: 'boltAction', scout: 'boltAction', ssg08: 'boltAction' };
 export function ejectDelayMs(cycle: 'slide' | 'bolt' | 'pump' | 'boltAction' | 'cylinder' | undefined): number {
   return cycle === 'pump' ? CYCLE.pump.delayMs + CYCLE.pump.ms / 2 : cycle === 'boltAction' ? CYCLE.boltAction.delayMs + CYCLE.boltAction.ms * 0.5 : 0;
 }

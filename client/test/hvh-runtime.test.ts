@@ -17,7 +17,7 @@ function fixture() {
   const config = defaultConfig('skeet');
   Object.assign(config.rage.aim,{enabled:true,autoTarget:true,hitbox:'body'});
   Object.assign(config.hvh.aim,{minDamage:1,hitchance:0,airHitchance:0,bodyAim:'off'});
-  Object.assign(config.skeet.profiles.rifles,{minDamage:1,hitchance:0,bodyAim:'off',autoStop:false});
+  Object.assign(config.skeet.profiles.deserteagle,{minDamage:1,hitchance:0,bodyAim:'off',autoStop:false});
   const weapons = new WeaponController(['rifle','pistol']);
   const eye = {x:0,y:0.91,z:0};
   const remote = {info:{pid:2,name:'Opponent'},latestAt:1000,latest:{
@@ -70,14 +70,14 @@ it('refreshes damage diagnostics when the current shot fails its gate', () => {
 it('refreshes accuracy diagnostics after movement since the last ready scan', () => {
   const {runtime,config,setSpeed,refreshConfig} = fixture();
   const scanChance = runtime.diagnostics.chance;
-  config.skeet.profiles.rifles.hitchance=100;
+  config.skeet.profiles.deserteagle.hitchance=100;
   refreshConfig();
   setSpeed(30);
   assert.equal(runtime.wantsFire(1000),false);
   assert.equal(runtime.diagnostics.state,'Waiting for accuracy');
   assert.ok(runtime.diagnostics.chance<scanChance);
   setSpeed(0);
-  config.skeet.profiles.rifles.hitchance=0;
+  config.skeet.profiles.deserteagle.hitchance=0;
   refreshConfig();
   assert.equal(runtime.wantsFire(1000),true,'the final same-frame check can recover after movement');
   assert.equal(runtime.diagnostics.state,'Ready');
@@ -85,7 +85,7 @@ it('refreshes accuracy diagnostics after movement since the last ready scan', ()
 
 it('keeps the movement gate when the scan is not ready', () => {
   const {runtime,session,config,setSpeed,refreshConfig} = fixture();
-  config.skeet.profiles.rifles.autoStop=true;
+  config.skeet.profiles.deserteagle.autoStop=true;
   refreshConfig();
   setSpeed(6);
   runtime.beforeFrame(session,0,1001);

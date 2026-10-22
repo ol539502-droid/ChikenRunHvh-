@@ -1,4 +1,4 @@
-import { PLAYER, WALLBANG, damageAt, makeRay, pelletDirections, rayChicken, raycastPenetrating, raycastWorld, wallbangScale, spreadFor, wrapAngle, type CollisionWorld, type Vec3, type WeaponDef, type Ray } from '@game/shared';
+import { WALLBANG, armoredDamage, damageAt, makeRay, pelletDirections, rayChicken, raycastPenetrating, raycastWorld, wallbangScale, spreadFor, wrapAngle, type CollisionWorld, type Vec3, type WeaponDef, type Ray } from '@game/shared';
 
 export interface ShotTarget { x: number; y: number; z: number; yaw: number; scale: number; hp: number; armor: number; pitch?: number }
 export interface ShotEstimate { damage: number; chance: number }
@@ -28,7 +28,8 @@ export function estimateShot(w: WeaponDef, eye: Vec3, direction: Vec3, target: S
       }
       damage += damageAt(w, hit.t) * (hit.headshot ? w.headshotMultiplier : 1) * scale;
     }
-    if (damage > 0) { hits++; total += damage - Math.min(target.armor, damage * PLAYER.armorAbsorb); }
+    // The legacy trace has no hitgroups, so a CS:GO weapon's armor counts on the whole hit.
+    if (damage > 0) { hits++; total += armoredDamage(w, damage, undefined, target.armor); }
   }
   return { damage: hits ? total / hits : 0, chance: hits / trials * 100 };
 }

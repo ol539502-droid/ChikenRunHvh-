@@ -1389,6 +1389,10 @@ const BUILDERS: Record<WeaponId, Builder> = {
   daggers,
   ak47,
   m4a1: m4a4,
+  ssg08,
+  scar20: awp,
+  deserteagle: deagle,
+  r8,
 };
 
 /** Baked geometry per weapon, group and material: made the first time, shared by every copy after. */

@@ -1,4 +1,5 @@
 import { WEAPONS, WEAPON_IDS, damageAt, hvhWeapon } from '@game/shared';
+import { DEFAULT_ERA_ID, ERAS } from '@game/shared/hvh/v2';
 import { defaultLook, SURFACES } from '../game/look';
 import { getCameraMode, setCameraMode } from '../game/CameraRig';
 import type { Control, Tab } from './controls';
@@ -12,6 +13,7 @@ export function buildTabs(dev: Dev): Tab[] {
   const key=(label:string,path:string,hint?:string):Control=>({type:'key',label,path,hint});
   const select=(label:string,path:string,hint?:string):Control=>({type:'select',label,path,hint});
   const info=(label:string,value:()=>string,hint?:string):Control=>({type:'info',label,value,hint});
+  const era=()=>ERAS[dev.config.skeet.era]??ERAS[DEFAULT_ERA_ID]!;
   const selected=()=>dev.runtime.currentSession?.mode.id === 'hvh' ? hvhWeapon(WEAPONS[dev.config.weapons.selected]) : WEAPONS[dev.config.weapons.selected];
   return [
     {id:'aim',label:'Aim',icon:'⌖',configKey:['rage.aim','hvh.aim','legit.trigger'],sections:[
@@ -27,11 +29,12 @@ export function buildTabs(dev: Dev): Tab[] {
       {title:'Resolver & counterplay',icon:'◈',items:[select('Resolver policy','hvh.resolverPolicy'),toggle('Resolve hidden hitboxes','hvh.feedback.resolver','Estimate hidden body yaw from public animation and shot outcomes'),info('Hidden hitboxes',()=> 'Eye yaw is public · body yaw is estimated','Wrong resolver hypotheses can miss. Safe points test several reconstructed skeletons.'),info('Limits',()=> 'Bounded animation · normal health · real historical rewind')]},
     ]},
     {id:'network',label:'Simulation',icon:'⌁',configKey:'hvh.core',sections:[
-      {title:'HvH rules',icon:'⌁',items:[select('Era profile','hvh.core.era'),toggle('Anti-bruteforce','hvh.core.antiBruteforce','Change desync side after a near incoming shot'),toggle('Defensive transition','hvh.core.defensive','Defensive era only; costs shared charge, lowers newest-record confidence'),slider('Choked commands','hvh.core.fakeLag','ticks'),select('Choke mode','hvh.core.fakeLagMode'),toggle('Fake duck','hvh.core.fakeDuck','Alternates real crouch commands during a choke cycle')]},
+      {title:'HvH rules',icon:'⌁',items:[select('Era table','skeet.era','Saved with your config; v2 servers always run late-csgo'),info('Era limits',()=>{const e=era();return `${e.id} · choke ${e.maxChoke} · charge ${e.chargeTicks} ticks`;},'From the shared era table'),select('Era profile','hvh.core.era','Legacy rooms only'),toggle('Defensive transition','hvh.core.defensive','Legacy rooms only (defensive era)'),slider('Choked commands','hvh.core.fakeLag','ticks'),select('Choke mode','hvh.core.fakeLagMode'),toggle('Fake duck','hvh.core.fakeDuck','Alternates real crouch commands during a choke cycle')]},
       {title:'Practice connection',icon:'⌁',items:[slider('Simulated latency','hvh.core.latencyMs','ms'),slider('Simulated jitter','hvh.core.jitterMs','ms'),slider('Packet loss','hvh.core.packetLoss','fraction'),info('Timing',()=> '64 simulation ticks / second · 20 snapshots / second')]},
     ]},
     {id:'exploits',label:'Exploits',icon:'ϟ',configKey:'hvh.exploit',sections:[
-      {title:'Shared charge',icon:'ϟ',items:[{type:'select',label:'Exploit mode',path:'hvh.exploit',options:[{value:'off',label:'Off'},{value:'doubleTap',label:'Double Tap'},{value:'hideShots',label:'Hide Shots'}]},info('Status',()=> dev.runtime.currentSession?.weapons.exploitState(performance.now()) ?? 'Join HvH to charge'),info('Charge',()=> `${Math.round((dev.runtime.currentSession?.local.server.hvhCharge??0)*100)}%`),info('Double Tap',()=> 'Two bullets now · full charge','Consumes two rounds and full charge. Burst cooldown is at least 313 ms; slower guns keep their normal cooldown. Projectiles, melee and native bursts cannot use exploits.'),info('Hide Shots',()=> '44% charge · keep your pose for 300 ms','Fires one round without exposing your shot-facing body or lower-body update. Tracers, damage and collision remain active.'),info('Tradeoff',()=> 'Recharge: 2 seconds idle · 4 with fake lag','Firing pauses recharge. Modes and guns share the same charge; respawn starts empty.')]},
+      {title:'Shared charge',icon:'ϟ',items:[{type:'select',label:'Exploit mode',path:'hvh.exploit',options:[{value:'off',label:'Off'},{value:'doubleTap',label:'Double Tap'},{value:'hideShots',label:'Hide Shots'}]},
+        info('Double Tap',()=> 'Two bullets now · full charge','Consumes two rounds and full charge. Burst cooldown is at least 313 ms; slower guns keep their normal cooldown. Projectiles, melee and native bursts cannot use exploits.'),info('Hide Shots',()=> '44% charge · keep your pose for 300 ms','Fires one round without exposing your shot-facing body or lower-body update. Tracers, damage and collision remain active.'),info('Tradeoff',()=> 'Recharge: 2 seconds idle · 4 with fake lag','Firing pauses recharge. Modes and guns share the same charge; respawn starts empty.')]},
     ]},
     {id:'movement',label:'Movement',icon:'➶',configKey:['legit.move','hvh.movement','misc.autoJump'],sections:[
       {title:'Auto stop and peeking',icon:'➶',items:[toggle('Auto-stop','hvh.movement.autoStop','Enables automatic ground movement control for accurate shots'),
@@ -54,7 +57,6 @@ export function buildTabs(dev: Dev): Tab[] {
       {title:'Local arena palette',icon:'◐',items:[...SURFACES.map(s=>({type:'color' as const,label:s[0].toUpperCase()+s.slice(1),path:`world.${s}`})),{type:'color',label:'Sky',path:'world.zenith'},{type:'color',label:'Horizon',path:'world.horizon'},slider('Exposure','world.exposure'),{type:'buttons',label:'Reset palette',items:[{label:'Default palette',run:()=>{dev.set('world',defaultLook());dev.menuRefresh();}}]}]},
     ]},
     {id:'telemetry',label:'Telemetry',icon:'▤',configKey:['misc','hvh.feedback'],sections:[
-      {title:'Shot decisions',icon:'▤',items:[toggle('Target information','hvh.feedback.targetInfo'),toggle('Shot log','hvh.feedback.shotLog'),info('Target',()=>dev.runtime.diagnostics.target),info('Prediction',()=>`~${dev.runtime.diagnostics.damage} HP / ${dev.runtime.diagnostics.chance}%`),info('Decision',()=>dev.runtime.diagnostics.state)]},
       {title:'Readouts',icon:'◎',items:[toggle('FPS counter','misc.fpsCounter'),toggle('Ping','misc.ping'),toggle('Coordinates','misc.coords'),toggle('Speed','misc.speed'),toggle('Map information','misc.mapInfo'),toggle('Crosshair','misc.crosshair'),toggle('Hitmarker','misc.hitmarker'),toggle('Damage indicator','misc.damageIndicator'),{type:'toggle',label:'Third person',bind:{get:()=>getCameraMode()==='third',set:v=>setCameraMode(v?'third':'first')}},{type:'buttons',label:'Crosshair',items:[{label:'Edit crosshair',run:()=>dev.openCrosshairSettings()}]}]},
       {title:'Match roster',icon:'☺',wide:true,items:[{type:'custom',label:'Players',render:()=>playersPanel(dev)}]},
     ]},

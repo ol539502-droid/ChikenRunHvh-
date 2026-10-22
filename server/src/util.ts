@@ -33,7 +33,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 /** Classic token bucket: `capacity` burst, refilled at `perSecond`. */
 export class TokenBucket {
   private tokens: number;
-  private last = performance.now();
+  /** The clock of the last take (null until the first: the caller's clock may be any clock). */
+  private last: number | null = null;
   private readonly capacity: number;
   private readonly perSecond: number;
 
@@ -44,7 +45,7 @@ export class TokenBucket {
   }
 
   take(cost = 1, now = performance.now()): boolean {
-    this.tokens = Math.min(this.capacity, this.tokens + ((now - this.last) / 1000) * this.perSecond);
+    if (this.last !== null) this.tokens = Math.min(this.capacity, this.tokens + ((now - this.last) / 1000) * this.perSecond);
     this.last = now;
     if (this.tokens < cost) return false;
     this.tokens -= cost;

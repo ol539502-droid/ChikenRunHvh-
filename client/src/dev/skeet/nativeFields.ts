@@ -197,4 +197,9 @@ export const NATIVE_FIELDS = [
   {"id":194,"key":"Misc_menuColor_2","field":"Misc.menuColor","component":2,"kind":"float","min":0,"max":1,"default":0.224},
   {"id":195,"key":"Misc_menuColor_3","field":"Misc.menuColor","component":3,"kind":"float","min":0,"max":1,"default":1},
 ] as const;
+/** Native menu fields that edit a browser config path instead of `skeet.native` (their one control is the native one). */
+export const NATIVE_CONFIG_PATHS: Readonly<Record<string, string>> = {
+  'Misc.bunnyHop': 'legit.move.bhop', 'Misc.airStrafe': 'legit.move.autoStrafe',
+  'Visuals.Other.crosshair': 'misc.crosshair', 'Visuals.Players.hitmarker': 'misc.hitmarker',
+};
 export function defaultNativeValues(): Record<string, number> { return Object.fromEntries(NATIVE_FIELDS.map(f=>[f.key,f.default])); }

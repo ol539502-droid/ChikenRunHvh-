@@ -11,9 +11,10 @@ export type WeaponShape = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'shotgun' | 'l
 /** Which silhouette each weapon (or other cause of death) gets. */
 const SHAPE_OF: Record<WeaponId, WeaponShape> = {
   pistol: 'pistol', mpistol: 'pistol', revolver: 'pistol', deagle: 'pistol', fiveseven: 'pistol', dualies: 'pistol', silenced: 'pistol',
+  deserteagle: 'pistol', r8: 'pistol',
   smg: 'smg',
   rifle: 'rifle', burst: 'rifle', battle: 'rifle', golden: 'rifle', ak47: 'rifle', m4a1: 'rifle',
-  sniper: 'sniper', scout: 'sniper',
+  sniper: 'sniper', scout: 'sniper', ssg08: 'sniper', scar20: 'sniper',
   shotgun: 'shotgun', autoshotgun: 'shotgun',
   lmg: 'lmg', minigun: 'lmg',
   rocket: 'launcher', launcher: 'launcher',

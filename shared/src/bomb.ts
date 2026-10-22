@@ -1,5 +1,6 @@
 import type { Team } from './maps/types';
 import { WEAPONS, weaponAllowed, type WeaponId } from './weapons';
+import { HVH_PISTOLS } from './hvh/v2/arsenal';
 
 /** ChikenBomb: chikenT (team 1) plant the bomb, chikenCT (team 2) defuse it. */
 export const BOMB = {
@@ -108,8 +109,8 @@ export const BUY_ITEMS: readonly BuyItem[] = [
 ];
 export const BUY_ITEMS_BY_ID: ReadonlyMap<string, BuyItem> = new Map(BUY_ITEMS.map((i) => [i.id, i]));
 
-/** Weapons that go in the pistol slot (the rest are main guns). */
-const SIDEARMS = new Set<WeaponId>(BUY_ITEMS.filter((i) => i.category === 'pistol').map((i) => i.weapon!));
+/** Weapons that go in the pistol slot (the rest are main guns), with the v2 HvH arsenal's pistols. */
+const SIDEARMS = new Set<WeaponId>([...BUY_ITEMS.filter((i) => i.category === 'pistol').map((i) => i.weapon!), ...HVH_PISTOLS]);
 
 export function isSidearm(id: WeaponId): boolean {
   return SIDEARMS.has(id);

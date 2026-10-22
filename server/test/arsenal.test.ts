@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import { ARMS_LADDER, BOMB, BUY_ITEMS, LOADOUT_GROUPS, MODES, SIM_DT, TRAINING_GUNS, WEAPONS, WEAPON_IDS, canBuy, isMelee, loadoutGroup, weaponAllowed, type ModeId, type WeaponId } from '@game/shared';
+import { isHvhArsenal } from '@game/shared/hvh/v2';
 import { runDevAction } from '../src/dev/devActions';
 import type { BombRoom } from '../src/rooms/BombRoom';
 import type { GameRoom } from '../src/rooms/GameRoom';
@@ -11,7 +12,8 @@ let current: GameRoom | null = null;
 afterEach(() => current?.close());
 
 const SPECIAL: WeaponId[] = ['minigun', 'golden', 'rocket', 'crossbow', 'launcher', 'goldknife', 'pan', 'katana'];
-const guns = WEAPON_IDS.filter((id) => !isMelee(id));
+// The v2 HvH arsenal (ssg08, scar20, deserteagle, r8) is HvH-only and in none of these lists.
+const guns = WEAPON_IDS.filter((id) => !isMelee(id) && !isHvhArsenal(id));
 const csGuns = guns.filter((id) => WEAPONS[id].category === 'cs');
 const named = (events: RecordedEvent[], name: string) => events.filter((e) => e.event === name);
 

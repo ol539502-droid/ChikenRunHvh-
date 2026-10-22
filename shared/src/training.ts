@@ -1,6 +1,7 @@
 import { ARMS_LADDER } from './arms';
 import { DEFAULT_MODS, type DevMods } from './dev';
 import { WEAPON_IDS, isMelee, type WeaponId } from './weapons';
+import { isHvhArsenal } from './hvh/v2/arsenal';
 
 /**
  * Training's weapon menu: every gun (Arms Race's ladder order first, then the rest) and every
@@ -8,7 +9,7 @@ import { WEAPON_IDS, isMelee, type WeaponId } from './weapons';
  */
 export const TRAINING_GUNS: readonly WeaponId[] = [
   ...ARMS_LADDER.filter((id) => !isMelee(id)),
-  ...WEAPON_IDS.filter((id) => !isMelee(id) && !ARMS_LADDER.includes(id)),
+  ...WEAPON_IDS.filter((id) => !isMelee(id) && !ARMS_LADDER.includes(id) && !isHvhArsenal(id)),
 ];
 export const TRAINING_KNIVES: readonly WeaponId[] = WEAPON_IDS.filter((id) => isMelee(id));
 

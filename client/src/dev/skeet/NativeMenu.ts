@@ -2,7 +2,7 @@ import type { Dev } from '../Dev';
 import { h } from '../../ui/dom';
 import { CHOICES, RANGES, setPath } from '../config';
 import { buildSkeetTabs } from './tabs';
-import { NATIVE_FIELDS } from './nativeFields';
+import { NATIVE_CONFIG_PATHS, NATIVE_FIELDS } from './nativeFields';
 import type { Control } from '../controls';
 
 interface NativeModule {
@@ -18,11 +18,7 @@ const canvas = h('canvas', { id: 'skeet-native-canvas', width: 660, height: 560,
 export const menuText = (s: string): string => s.replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...').replace(/\u2192/g, '->').replace(/[^\x20-\x7e\xa0-\xff]/g, '').replace(/\s+/g, ' ').trim();
 const call = (m: NativeModule, name: string, ...values: (number | string)[]) => m.ccall(name, null, values.map(v => typeof v), values.map(v => typeof v === 'string' ? menuText(v) : v));
 const value = (m: NativeModule, name: string, id: number) => m.ccall(name, 'number', ['number'], [id]) as number;
-const mapped: Record<string,string> = {
-  'Misc.bunnyHop':'legit.move.bhop', 'Misc.airStrafe':'legit.move.autoStrafe',
-  'Misc.logDamageDealt':'hvh.feedback.shotLog',
-  'Visuals.Other.crosshair':'misc.crosshair', 'Visuals.Players.hitmarker':'misc.hitmarker',
-};
+const mapped = NATIVE_CONFIG_PATHS;
 
 /** Runs the supplied Menu.cpp and custom ImGui widgets, compiled to WebAssembly. */
 export class NativeMenu {
@@ -30,7 +26,7 @@ export class NativeMenu {
   private frameId = 0;
   private disposed = false;
   private module: NativeModule | undefined;
-  private controls: { id:number; c:Control; last:number; options?:string[] }[] = [];
+  private controls: { id:number; c:Control; last:number; options?:string[]; picker?:boolean }[] = [];
   private awaitingKey: { path:string; id:number } | undefined;
   private lastFrame = performance.now();
   private sync = true;
@@ -76,7 +72,7 @@ export class NativeMenu {
       if(c.type==='buttons')return;
       if(c.type==='key')type=3;
       if(c.type==='color')type=5;
-      if(c.type==='custom')return;
+      if(c.type==='custom'||c.type==='picker')return;
       if('path' in c && c.path && ['settings.theme','settings.accent','settings.animSpeed'].includes(c.path))return;
       call(m,'native_add',id,group,c.label,type,min,max,c.type==='select'?c.options?.map(o=>o.label).join('|')??options.join('|'):'',c.hint??'');
       this.controls.push({id,c,last:NaN,options});id++;
@@ -94,7 +90,13 @@ export class NativeMenu {
         // Type 6: a section heading.
         call(m,'native_add',id++,group,section.title,6,0,1,'','');
         for(const c of section.items) {
-          if(c.type==='buttons')for(const b of c.items)addButton(group,c.items.length===1&&b.label==='Apply'?`Apply ${c.label.toLowerCase()}`:b.label,b.run);
+          // The menu font has no icons and ImGui no icon row: a picker is a dropdown, with the picked value's controls after it.
+          if(c.type==='picker'){
+            const choice:Control={type:'select',label:c.label,hint:c.hint,bind:c.bind,options:c.options.map(o=>({value:o.value,label:o.label}))};
+            add(group,choice);this.controls[this.controls.length-1]!.picker=true;
+            for(const sub of c.sections(c.bind.get()))add(group,sub);
+          }
+          else if(c.type==='buttons')for(const b of c.items)addButton(group,c.items.length===1&&b.label==='Apply'?`Apply ${c.label.toLowerCase()}`:b.label,b.run);
           else add(group,c);
         }
       }
@@ -137,7 +139,7 @@ export class NativeMenu {
     let config: typeof this.dev.config | undefined;
     for(const f of NATIVE_FIELDS){const n=value(m,'native_get',f.id);if(Math.abs(n-(this.nativeValues.get(f.id)??0))<.00001)continue;this.nativeValues.set(f.id,n);config??=structuredClone(this.dev.config);config.skeet.native[f.key]=n;const path=mapped[f.field];if(path)setPath(config,path,!!n);}
     if(config)this.dev.replaceConfig(config);
-    for(const c of this.controls){const n=value(m,'native_control_get',c.id);if(Math.abs(n-c.last)<.00001)continue;c.last=n;this.write(c.c,n,c.options,c.id);if(c.c.type==='key'||c.c.type==='buttons'){call(m,'native_control_set',c.id,0);c.last=0;}}
+    for(const c of this.controls){const n=value(m,'native_control_get',c.id);if(Math.abs(n-c.last)<.00001)continue;c.last=n;this.write(c.c,n,c.options,c.id);if(c.picker)this.registerPending=true;if(c.c.type==='key'||c.c.type==='buttons'){call(m,'native_control_set',c.id,0);c.last=0;}}
     // Read-only widget bounds support browser interaction tests without changing native layout.
     canvas.dataset.widgets=m.UTF8ToString(m.ccall('native_widgets','number',[],[]));
     this.frameId=requestAnimationFrame(this.frame);

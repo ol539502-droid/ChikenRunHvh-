@@ -4,9 +4,11 @@ import type { InputFrame } from '../physics';
 import { HVH, type HvhCoreSettings, type HvhLoadout } from '../hvh';
 import type { WeaponDef } from '../weapons';
 
+/** Legacy choke cap. v2 rooms pass their era's maxChoke instead. */
+export const LEGACY_MAX_CHOKE = 12;
 /** Shared choke policy for outgoing commands and remote presentation. */
-export function fakeLagTicks(core: HvhCoreSettings, seq: number, speed: number, shooting = false): number {
-  const limit = clamp(Math.round(core.fakeLag),0,12);
+export function fakeLagTicks(core: HvhCoreSettings, seq: number, speed: number, shooting = false, maxChoke = LEGACY_MAX_CHOKE): number {
+  const limit = clamp(Math.round(core.fakeLag),0,maxChoke);
   if (shooting && core.fakeLagBreakOnShot) return 0;
   const ticks = core.fakeLagMode === 'velocity' ? Math.round(limit * Math.min(1,Math.max(0,speed)/6))
     : core.fakeLagMode === 'peek' ? shooting ? 0 : limit
@@ -52,11 +54,13 @@ export class NetworkSimulator<T> {
 }
 export class CommandChoker {
   private pending: Readonly<InputFrame>[] = [];
-  push(frame: Readonly<InputFrame>, choke: number, flush = false): readonly InputFrame[] {
+  push(frame: Readonly<InputFrame>, choke: number, flush = false, maxChoke = LEGACY_MAX_CHOKE): readonly InputFrame[] {
     this.pending.push(Object.freeze({ ...frame }));
-    if (!flush && this.pending.length <= clamp(Math.round(choke), 0, 12)) return [];
+    if (!flush && this.pending.length <= clamp(Math.round(choke), 0, maxChoke)) return [];
     const batch = this.pending; this.pending = []; return batch;
   }
+  /** True when push(frame, choke, flush) would hold the frame back instead of releasing a batch. */
+  wouldHold(choke: number, flush = false, maxChoke = LEGACY_MAX_CHOKE): boolean { return !flush && this.pending.length + 1 <= clamp(Math.round(choke), 0, maxChoke); }
   clear(): void { this.pending = []; }
 }
 export function exploitMode(mode: HvhLoadout['exploit'], weapon: WeaponDef, mag: number): HvhLoadout['exploit'] {

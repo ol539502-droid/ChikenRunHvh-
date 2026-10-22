@@ -8,8 +8,8 @@ import {WeaponController} from '../src/game/WeaponController';
 it('Skeet fake-lag controls map consistently to bounded runtime and server policies',()=>{
  const raw=defaultConfig('skeet');raw.skeet.fakeLag.enabled=true;raw.skeet.fakeLag.limit=999;raw.skeet.fakeLag.mode='unknown' as never;
  raw.hvh.movement.subtickStrafe=true;const c=sanitizeConfig(raw);
- assert.equal(c.skeet.fakeLag.limit,12);assert.equal(c.skeet.fakeLag.mode,'static');assert.equal(c.hvh.movement.subtickStrafe,true);
- assert.equal(HVH_PANELS.skeet.loadout(c).core!.fakeLag,12);assert.equal(skeetEffectiveConfig(c,WEAPONS.pistol).hvh.core!.fakeLag,12);
+ assert.equal(c.skeet.fakeLag.limit,14);assert.equal(c.skeet.fakeLag.mode,'static');assert.equal(c.hvh.movement.subtickStrafe,true);
+ assert.equal(HVH_PANELS.skeet.loadout(c).core!.fakeLag,14);assert.equal(skeetEffectiveConfig(c,WEAPONS.pistol).hvh.core!.fakeLag,14);
  assert.equal(HVH_PANELS.manual.loadout(c).core!.fakeLag,0);
  c.skeet.fakeLag.enabled=false;assert.equal(HVH_PANELS.skeet.loadout(c).core!.fakeLag,0);
  const old=defaultConfig('skeet');delete (old.skeet as Partial<typeof old.skeet>).fakeLag;old.hvh.core!.fakeLag=9;old.hvh.core!.fakeLagMode='random';

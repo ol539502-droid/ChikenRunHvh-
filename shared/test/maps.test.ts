@@ -11,6 +11,14 @@ it('never links elevated routes across an unsupported gap', () => {
   assert.deepEqual(buildNavGraph([a, b], gap).links, [[], []]);
 });
 
+it('keeps links checked when the map data was made as they are (no costly re-check at run time)', () => {
+  const a = { x: -2, y: 3, z: 0 }, b = { x: 2, y: 3, z: 0 };
+  const platform = { minX: -4, maxX: 4, minY: 0, maxY: 3, minZ: -2, maxZ: 2 };
+  const gap = new CollisionWorld(10, [{ ...platform, maxX: -1 }, { ...platform, minX: 1 }]);
+  assert.deepEqual(buildNavGraph([a, b], gap, [[1], [0]]).links, [[], []]);
+  assert.deepEqual(buildNavGraph([a, b], gap, [[1], [0]], true).links, [[1], [0]]);
+});
+
 it('offers Mirage alongside the original maps and rejects inherited object keys', () => {
   assert.deepEqual(MAP_IDS, ['mirage', 'farm', 'town', 'sandstown', 'harbor', 'frostbite', 'factory', 'flat', 'night', 'lobby']);
   for (const id of MAP_IDS) assert.equal(isMapId(id), true);
@@ -95,6 +103,8 @@ for (const id of MAP_IDS) {
       if (!map.nav) return;
       for (const p of map.nav) assert.ok(isSpaceFree(p.x, p.y ?? 0, p.z, world), `waypoint ${p.x},${p.z} is blocked`);
       const graph = buildNavGraph(map.nav, world, map.navLinks);
+      // Links marked checked skip this check at run time, so they must all still pass it.
+      if (map.navLinksChecked) assert.deepEqual(graph.links, map.navLinks, 'every checked link is walkable');
       // Sealed event levels (zones) are their own little worlds: every waypoint reaches every
       // other in the same area.
       const area = (p: { x: number; z: number }) => map.zones?.find((z) => p.x > z.minX && p.x < z.maxX && p.z > z.minZ && p.z < z.maxZ)?.id ?? 'main';

@@ -28,6 +28,7 @@ import {
   openSpots,
   isWeaponId,
   makeRay,
+  mulberry32,
   meleeHit,
   packPlayer,
   pelletDirections,
@@ -124,6 +125,13 @@ export interface RoomOptions {
   noBots?: boolean;
   /** Ranked rooms: what the anti-cheat does about cheaters (default: removes them). */
   antiCheat?: AntiCheatMode;
+  /** HvH mode only: which HvH engine the room runs (see HvhRoom; env HVH_ENGINE). Default 'legacy'. */
+  hvhEngine?: 'legacy' | 'v2';
+  /**
+   * Seeds the room's own random choices (team picks, spawn points, loot) so a headless match
+   * replays bit-identically. Unset (live rooms): Math.random, as before.
+   */
+  seed?: number;
 }
 
 /** What the room needs to know about a player joining (loaded from their account). */
@@ -221,11 +229,14 @@ export class GameRoom {
   private accumulator = 0;
   private closed = false;
   hvhTick = 0;
+  /** The room's random source: seeded when RoomOptions.seed is set, else Math.random. */
+  readonly random: () => number;
   private readonly publicStates = new Map<number, { until: number; shot: number; state: import('@game/shared').PlayerState }>();
 
   constructor(io: GameServer, options: RoomOptions, hooks: RoomHooks = {}) {
     this.io = io;
     this.hooks = hooks;
+    this.random = options.seed !== undefined ? mulberry32(options.seed >>> 0) : () => Math.random();
     this.mode = MODES[options.mode];
     this.map = MAPS[options.map];
     this.world = createCollisionWorld(this.map);
@@ -368,8 +379,8 @@ export class GameRoom {
     if (this.isFull) return { ok: false, error: 'That room is full.' };
     // A human takes a bot's seat (on their own team, when they come with one).
     const wantTeam = this.mode.teams && profile.team ? profile.team : 0;
-    if (wantTeam && this.teamSize(wantTeam) >= this.mode.maxPlayers / 2) this.bots.removeOne(wantTeam);
-    if (this.players.size >= this.mode.maxPlayers && !this.bots.removeOne()) return { ok: false, error: 'That room is full.' };
+    if (wantTeam && this.teamSize(wantTeam) >= this.mode.maxPlayers / 2) this.bots.removeOne(wantTeam, this.removesDeadBotsFirst());
+    if (this.players.size >= this.mode.maxPlayers && !this.bots.removeOne(0, this.removesDeadBotsFirst())) return { ok: false, error: 'That room is full.' };
     if (socket && this.bySocket.has(socket.id)) return { ok: false, error: 'Already in this room.' };
 
     const melee = profile.loadout.find((w) => isMelee(w)) ?? DEFAULT_MELEE;
@@ -530,7 +541,7 @@ export class GameRoom {
     if (red !== blue) return red < blue ? 1 : 2;
     const [rs, bs] = this.match.teamScores;
     if (rs !== bs) return rs < bs ? 1 : 2;
-    return Math.random() < 0.5 ? 1 : 2;
+    return this.random() < 0.5 ? 1 : 2;
   }
 
   // ---------------------------------------------------------------------------
@@ -856,11 +867,12 @@ export class GameRoom {
     if (hit) this.damage(hit.key, p, w.damage * (hit.headshot ? w.headshotMultiplier : 1), hit.headshot, w.id, eye, now, this.shooterFlags(p, now));
   }
 
-  handleReload(p: ServerPlayer): void {
+  /** `now`: the room clock (live sockets: arrival time; bots and headless drivers: the tick's time). */
+  handleReload(p: ServerPlayer, now = performance.now()): void {
     this.enforceHvhRules(p);
     const w = WEAPONS[p.weapon];
     if (!p.alive || p.reloadUntil > 0 || p.mag >= p.magazineSize(w.id)) return;
-    p.reloadUntil = performance.now() + (p.mods?.instantReload ? 0.001 : w.reloadTime * (p.upgrades?.reload ?? 1));
+    p.reloadUntil = now + (p.mods?.instantReload ? 0.001 : w.reloadTime * (p.upgrades?.reload ?? 1));
     p.aiming = false;
   }
 
@@ -1002,7 +1014,7 @@ export class GameRoom {
     if (amount <= 0) return;
 
     let remaining = amount;
-    if (victim.armor > 0) {
+    if (victim.armor > 0 && this.armorAbsorbs()) {
       const absorbed = Math.min(victim.armor, remaining * PLAYER.armorAbsorb);
       victim.armor -= absorbed;
       remaining -= absorbed;
@@ -1045,7 +1057,7 @@ export class GameRoom {
         attacker.info.kills++;
         if (headshot) attacker.headshotKills++;
         attacker.info.score += KILL_SCORE + (headshot ? HEADSHOT_BONUS : 0);
-        if (this.mode.teams && this.mode.teamKills && attacker.info.team !== 0) this.match.teamScores[attacker.info.team - 1]++;
+        if (this.mode.teams && this.scoresTeamKills() && attacker.info.team !== 0) this.match.teamScores[attacker.info.team - 1]++;
       } else {
         victim.info.score = Math.max(0, victim.info.score - SUICIDE_PENALTY);
       }
@@ -1082,7 +1094,7 @@ export class GameRoom {
     if (panel === 'manual') { p.hvh = defaultHvhLoadout(); p.hvhEnabled = false; }
     if (p.hvhPreparing) {
       p.hvhPreparing = false;
-      this.spawn(p, performance.now(), true);
+      if (this.mayRespawn(p)) this.spawn(p, performance.now(), true);
     }
     this.updateHvhPose(p, performance.now());
     return true;
@@ -1111,12 +1123,12 @@ export class GameRoom {
       else if (q.info.team === to) humansTo++;
     }
     if (humansTo + 1 - (humansFrom - 1) > 2) return `${teamName(this.mode, to)} already has more players.`;
-    if (this.teamSize(to) >= this.mode.maxPlayers / 2 && !this.bots.removeOne(to)) return `${teamName(this.mode, to)} is full.`;
+    if (this.teamSize(to) >= this.mode.maxPlayers / 2 && !this.bots.removeOne(to, this.removesDeadBotsFirst())) return `${teamName(this.mode, to)} is full.`;
     p.teamSwitchAt = now + TEAM_SWITCH_COOLDOWN_MS;
     if (p.alive) this.kill(p, null, 'world', false, now, 0, false);
     p.info.team = to;
     // Bots even it out: one leaves the bigger side and the bot top-up refills the smaller one.
-    if (this.teamSize(to) - this.teamSize(from) >= 2) this.bots.removeOne(to);
+    if (this.teamSize(to) - this.teamSize(from) >= 2) this.bots.removeOne(to, this.removesDeadBotsFirst());
     this.announcePlayer(p);
     this.systemMessage(`${p.info.name} joined ${teamName(this.mode, to)}`);
     this.onTeamSwitched(p, now);
@@ -1168,7 +1180,7 @@ export class GameRoom {
       // Beyond SPREAD_SAFE metres every spot is as good as any other, so spawns vary.
       let nearest = SPREAD_SAFE;
       for (const e of enemies) nearest = Math.min(nearest, Math.hypot(e.state.x - spot.x, e.state.z - spot.z));
-      return { spot, score: nearest + Math.random() * 6 };
+      return { spot, score: nearest + this.random() * 6 };
     });
     scored.sort((a, b) => b.score - a.score);
     // Of the furthest few, the first that no enemy can see.
@@ -1207,7 +1219,7 @@ export class GameRoom {
       for (const other of this.players.values()) {
         if (other !== p && other.alive && Math.hypot(other.state.x - spawn.x, other.state.z - spawn.z) < PLAYER.radius * 3) taken = true;
       }
-      const score = nearest + Math.random() * 4 - (taken ? 1000 : 0);
+      const score = nearest + this.random() * 4 - (taken ? 1000 : 0);
       if (score > bestScore) {
         bestScore = score;
         best = spawn;
@@ -1233,8 +1245,7 @@ export class GameRoom {
         else if (now >= (m.endsAt ?? 0)) this.startMatch(now);
         break;
       case 'playing':
-        // Needing a full lobby to start is not a reason to end a match when one person leaves.
-        if (this.players.size < (this.mode.noBots ? Math.min(2, this.mode.minPlayers) : this.mode.minPlayers)) this.setPhase('waiting', null);
+        if (!this.keepsPlayingWith(this.players.size)) this.setPhase('waiting', null);
         else if (m.endsAt !== null && now >= m.endsAt) this.endMatch(now);
         break;
       case 'ended':
@@ -1246,9 +1257,15 @@ export class GameRoom {
     }
   }
 
-  /** Skips waiting/countdown (private-room hosts, tests). */
-  startNow(): void {
-    if (!this.mode.building) this.startMatch(performance.now());
+  /** Whether a match in play goes on with `n` players (v2 HvH rounds: with one, paused in warmup). */
+  protected keepsPlayingWith(n: number): boolean {
+    // Needing a full lobby to start is not a reason to end a match when one person leaves.
+    return n >= (this.mode.noBots ? Math.min(2, this.mode.minPlayers) : this.mode.minPlayers);
+  }
+
+  /** Skips waiting/countdown (private-room hosts, tests). `now`: the room clock (headless drivers pass their tick time). */
+  startNow(now = performance.now()): void {
+    if (!this.mode.building) this.startMatch(now);
   }
 
   private setPhase(phase: MatchPhase, endsAt: number | null): void {
@@ -1275,7 +1292,7 @@ export class GameRoom {
     this.onMatchStart(now);
     this.match = {
       phase: 'playing',
-      endsAt: this.mode.timeLimitMs > 0 ? now + this.mode.timeLimitMs : null,
+      endsAt: this.matchTimeLimitMs() > 0 ? now + this.matchTimeLimitMs() : null,
       teamScores: [0, 0],
       winnerTeam: 0,
       winnerPid: 0,
@@ -1287,6 +1304,32 @@ export class GameRoom {
 
   /** Hook for mode systems to reset their state at the start of a match. */
   protected onMatchStart(_now: number): void {}
+
+  /** The match clock (v2 HvH rounds have none: the rounds end the match). */
+  protected matchTimeLimitMs(): number {
+    return this.mode.timeLimitMs;
+  }
+
+  /** Whether a kill scores for the killer's team (v2 HvH rounds score rounds instead). */
+  protected scoresTeamKills(): boolean {
+    return this.mode.teamKills === true;
+  }
+
+  /** Whether a dead (or newly set up) player may come back now (v2 HvH: not during a round). */
+  protected mayRespawn(_p: ServerPlayer): boolean {
+    return true;
+  }
+
+  /** Whether armor points soak up damage here (v2 HvH: the shot applies armor itself). */
+  protected armorAbsorbs(): boolean {
+    return true;
+  }
+
+  /** The winning team when a team match ends (v2 HvH rounds decide it themselves). */
+  protected matchWinnerTeam(): Team {
+    const [red, blue] = this.match.teamScores;
+    return red === blue ? 0 : red > blue ? 1 : 2;
+  }
 
   protected checkScoreLimit(now: number): void {
     const limit = this.mode.scoreLimit;
@@ -1317,8 +1360,7 @@ export class GameRoom {
     if (winner) {
       winnerPid = winner.pid;
     } else if (this.mode.teams) {
-      const [red, blue] = this.match.teamScores;
-      winnerTeam = red === blue ? 0 : red > blue ? 1 : 2;
+      winnerTeam = this.matchWinnerTeam();
     } else {
       const byKills = [...players].sort((a, b) => b.info.kills - a.info.kills || b.info.score - a.info.score);
       const top = byKills[0];
@@ -1409,39 +1451,14 @@ export class GameRoom {
     this.hvhTick++;
     for (const p of this.players.values()) {
       this.enforceHvhRules(p);
-      const command = p.commands.next();
-      if (command) this.applyInput(p, command);
-      // Missing commands cannot invent presses or run assistance without new input.
-      else if (p.alive && !p.immobile && !p.vehicle && p.lastInput) {
-        // A held key is remembered, but a missing command never makes the chicken hop on landing.
-        const held = p.state.jumpHeld;
-        stepPlayer(p.state,
-          { ...p.lastInput, forward: 0, right: 0, jump: held && !p.state.onGround, autoHop: false, subtickStrafe: false }, SIM_DT,
-          this.world, p.moveMods(), hopMaxFor(p.weapon), moveSpeedFor(p.weapon), this.mode.id === 'hvh');
-        p.state.jumpHeld = held;
-      }
-      p.simulationTime = now;
-      if (this.mode.id === 'hvh') {
-        p.weaponHeat = Math.max(0, p.weaponHeat - SIM_DT * 1.5);
-        p.resource.step(this.hvhTick, p.fireQueue.length > 0 || now - p.lastFireAt < 250,
-          p.hvhEnabled && fakeLagTicks(p.hvh.core ?? defaultHvhCore(), p.lastSeq, p.state.horizontalSpeed) > 0);
-      } else p.resource.playerTick++;
-      const pose = this.updateHvhPose(p, now);
-      if (this.mode.id === 'hvh') {
-        stepAnimation(p.animation, { eyeYaw: pose.real, desiredDelta: wrapAngle(pose.fake - pose.real), speed: p.state.horizontalSpeed,
-          crouch: p.state.crouchAmount ?? (p.state.crouching ? 1 : 0), grounded: p.state.onGround,
-          active: p.hvhEnabled && p.hvh.antiAim.enabled && p.alive && !p.vehicle && !(now >= p.concealUntil && now < p.revealUntil),
-          concealed: now < p.concealUntil, weaponSpeed: moveSpeedFor(p.weapon),
-          velocity: { x: (p.state.walkVx ?? 0) + p.state.vx, y: p.state.vy, z: (p.state.walkVz ?? 0) + p.state.vz } }, this.hvhTick);
-        p.yaw = p.animation.bodyYaw; p.fakeYaw = p.animation.eyeYaw; p.simulationTime = now;
-      }
+      this.simulatePlayer(p, now);
       p.history.push({ t: now, x: p.state.x, y: p.state.y, z: p.state.z, yaw: p.yaw, alive: p.alive, scale: bodyScale(p.state),
         pitch: this.mode.id === 'hvh' ? p.fakePitch : p.pitch });
       if (p.reloadUntil > 0 && now >= p.reloadUntil) {
         p.reloadUntil = 0;
         p.mags.set(p.weapon, p.magazineSize(p.weapon));
       }
-      if (!p.hvhPreparing && !p.alive && now >= p.respawnAt && this.match.phase !== 'ended') this.spawn(p, now, true);
+      if (!p.hvhPreparing && !p.alive && now >= p.respawnAt && this.match.phase !== 'ended' && this.mayRespawn(p)) this.spawn(p, now, true);
     }
     for (const p of this.players.values()) {
       const req = p.fireQueue[0];
@@ -1455,6 +1472,49 @@ export class GameRoom {
     this.updateMatch(now);
   }
 
+  /**
+   * One player's share of a server tick: run their queued command (or coast without one) and
+   * step the HvH pose. Seam for HvhRoom's v2 engine; the legacy behaviour lives here unchanged.
+   */
+  protected simulatePlayer(p: ServerPlayer, now: number): void {
+    const command = p.commands.next();
+    if (command) this.applyInput(p, command);
+    // Missing commands cannot invent presses or run assistance without new input.
+    else if (p.alive && !p.immobile && !p.vehicle && p.lastInput) {
+      // A held key is remembered, but a missing command never makes the chicken hop on landing.
+      const held = p.state.jumpHeld;
+      stepPlayer(p.state,
+        { ...p.lastInput, forward: 0, right: 0, jump: held && !p.state.onGround, autoHop: false, subtickStrafe: false }, SIM_DT,
+        this.world, p.moveMods(), hopMaxFor(p.weapon), moveSpeedFor(p.weapon), this.mode.id === 'hvh');
+      p.state.jumpHeld = held;
+    }
+    p.simulationTime = now;
+    if (this.mode.id === 'hvh') {
+      p.weaponHeat = Math.max(0, p.weaponHeat - SIM_DT * 1.5);
+      p.resource.step(this.hvhTick, p.fireQueue.length > 0 || now - p.lastFireAt < 250,
+        p.hvhEnabled && fakeLagTicks(p.hvh.core ?? defaultHvhCore(), p.lastSeq, p.state.horizontalSpeed) > 0);
+    } else p.resource.playerTick++;
+    const pose = this.updateHvhPose(p, now);
+    if (this.mode.id === 'hvh') {
+      stepAnimation(p.animation, { eyeYaw: pose.real, desiredDelta: wrapAngle(pose.fake - pose.real), speed: p.state.horizontalSpeed,
+        crouch: p.state.crouchAmount ?? (p.state.crouching ? 1 : 0), grounded: p.state.onGround,
+        active: p.hvhEnabled && p.hvh.antiAim.enabled && p.alive && !p.vehicle && !(now >= p.concealUntil && now < p.revealUntil),
+        concealed: now < p.concealUntil, weaponSpeed: moveSpeedFor(p.weapon),
+        velocity: { x: (p.state.walkVx ?? 0) + p.state.vx, y: p.state.vy, z: (p.state.walkVz ?? 0) + p.state.vz } }, this.hvhTick);
+      p.yaw = p.animation.bodyYaw; p.fakeYaw = p.animation.eyeYaw; p.simulationTime = now;
+    }
+  }
+
+  /** Whether a bot making room for a human is a dead one when any is (v2 HvH rounds: the living keep playing). */
+  protected removesDeadBotsFirst(): boolean {
+    return false;
+  }
+
+  /** How many players quick play tops a public room up to with bots (HvH v2: 10, a full 5v5). */
+  protected botFillTarget(): number {
+    return this.mode.fillBots ?? (this.mode.maxPlayers === 2 ? 2 : 4);
+  }
+
   /** Keeps the bot count on target: fixed for practice rooms, filling empty seats in public ones. */
   private maintainBots(now: number): void {
     if (now < this.nextBotCheck || this.closed || this.humanCount === 0) return;
@@ -1463,11 +1523,11 @@ export class GameRoom {
     // Ranked, real-players-only modes and "without bots" rooms: no bots at all.
     if (this.noBots) wanted = 0;
     else if (this.botTarget !== null) wanted = this.botTarget;
-    else if (this.fillBots && !this.mode.building) wanted = Math.max(0, (this.mode.fillBots ?? (this.mode.maxPlayers === 2 ? 2 : 4)) - this.humanCount);
+    else if (this.fillBots && !this.mode.building) wanted = Math.max(0, this.botFillTarget() - this.humanCount);
     wanted = Math.min(wanted, this.mode.maxPlayers - this.humanCount);
     // Fill all empty seats at once; leave one at a time so a match doesn't empty out suddenly.
     while (this.bots.count < wanted && this.bots.add());
-    if (this.bots.count > wanted) this.bots.removeOne();
+    if (this.bots.count > wanted) this.bots.removeOne(0, this.removesDeadBotsFirst());
   }
 
   /**
@@ -1522,7 +1582,7 @@ export class GameRoom {
 // Validation of untrusted client messages
 // ---------------------------------------------------------------------------
 
-function parseInput(raw: unknown): InputFrame | null {
+export function parseInput(raw: unknown): InputFrame | null {
   if (!isRecord(raw)) return null;
   const { seq, forward, right, jump, yaw, pitch } = raw;
   if (!Number.isSafeInteger(seq) || !isFiniteNumber(forward) || !isFiniteNumber(right) || !isFiniteNumber(yaw)) return null;
@@ -1544,7 +1604,7 @@ function parseInput(raw: unknown): InputFrame | null {
   };
 }
 
-function parseFire(raw: unknown): FireRequest | null {
+export function parseFire(raw: unknown): FireRequest | null {
   if (!isRecord(raw)) return null;
   const { shot, weapon, dx, dy, dz, t, aiming } = raw;
   if (!Number.isSafeInteger(shot) || !isWeaponId(weapon)) return null;

@@ -1,4 +1,4 @@
-import type { Aabb, CollisionWorld } from './collision';
+import { CELL_SIZE, type Aabb, type CollisionWorld } from './collision';
 import type { Vec3 } from './math';
 import { CHICKEN_POSE } from './chickenPose';
 import { rayHvhChicken } from './hvh/geometry';
@@ -36,22 +36,21 @@ export function rayAabb(ray: Ray, b: Aabb, maxT: number, out?: RayHit): number {
   let tMax = maxT;
   let axis = -1;
   let sign = 0;
-  const o = [ray.ox, ray.oy, ray.oz];
-  const d = [ray.dx, ray.dy, ray.dz];
-  const lo = [b.minX, b.minY, b.minZ];
-  const hi = [b.maxX, b.maxY, b.maxZ];
+  // The slab test, one axis at a time (unrolled: this is the hottest function of every ray).
   for (let i = 0; i < 3; i++) {
-    const oi = o[i]!;
-    const di = d[i]!;
+    const oi = i === 0 ? ray.ox : i === 1 ? ray.oy : ray.oz;
+    const di = i === 0 ? ray.dx : i === 1 ? ray.dy : ray.dz;
+    const lo = i === 0 ? b.minX : i === 1 ? b.minY : b.minZ;
+    const hi = i === 0 ? b.maxX : i === 1 ? b.maxY : b.maxZ;
     if (Math.abs(di) < 1e-12) {
-      if (oi < lo[i]! || oi > hi[i]!) return -1;
+      if (oi < lo || oi > hi) return -1;
       continue;
     }
-    let t1 = (lo[i]! - oi) / di;
-    let t2 = (hi[i]! - oi) / di;
+    let t1 = (lo - oi) / di;
+    let t2 = (hi - oi) / di;
     let s = -1;
     if (t1 > t2) {
-      [t1, t2] = [t2, t1];
+      const t = t1; t1 = t2; t2 = t;
       s = 1;
     }
     if (t1 > tMin) {
@@ -86,26 +85,47 @@ export function raySphere(ray: Ray, cx: number, cy: number, cz: number, radius: 
 }
 
 /** Nearest hit against the ground plane (y = 0) and every solid box (except `skip`), within `maxT`. */
-export function raycastWorld(ray: Ray, world: CollisionWorld, maxT: number, skip?: ReadonlySet<number>): RayHit | null {
+export function raycastWorld(ray: Ray, world: CollisionWorld, maxT: number, skip?: { has(id: number): boolean }): RayHit | null {
+  // A non-finite ray, or a NaN or negative range, hits nothing (and must not walk the grid forever).
+  if (!Number.isFinite(ray.ox + ray.oz + ray.dx + ray.dz) || !(maxT >= 0)) return null;
   let best: RayHit | null = null;
   if (ray.dy < 0 && ray.oy >= 0) {
     const t = -ray.oy / ray.dy;
     if (t <= maxT) best = { t, nx: 0, ny: 1, nz: 0, id: -1 };
   }
   const hit: RayHit = { t: 0, nx: 0, ny: 0, nz: 0 };
-  // Query short strips along the ray, stopping at the first hit strip; large maps never need a full scan.
   const seen = new Set<number>();
-  for (let start = 0; start <= maxT; start += 4) {
-    const end = Math.min(maxT, start + 4);
-    const sx = ray.ox + ray.dx * start, sz = ray.oz + ray.dz * start;
-    const ex = ray.ox + ray.dx * end, ez = ray.oz + ray.dz * end;
-    for (const id of world.idsNear(Math.min(sx, ex), Math.min(sz, ez), Math.max(sx, ex), Math.max(sz, ez))) {
+  // Nearest hit; an exact tie goes to the lowest id (the ground, -1, first), as a scan of every box would.
+  const visit = (cx: number, cz: number): void => {
+    const ids = world.cellIds(cx, cz);
+    if (!ids) return;
+    for (const id of ids) {
       if (seen.has(id) || skip?.has(id)) continue;
       seen.add(id);
       const t = rayAabb(ray, world.get(id)!, best ? best.t : maxT, hit);
-      if (t >= 0 && (!best || t < best.t)) best = { ...hit, id };
+      if (t >= 0 && (!best || t < best.t || (t === best.t && id < best.id!))) best = { ...hit, id };
     }
-    if (end === maxT || best && best.t <= end) break;
+  };
+  // Walk only the grid cells the ray crosses in XZ, nearest first (Amanatides & Woo), and stop once
+  // the best hit lies before the next cell: a box is registered in every cell its footprint touches.
+  let cx = Math.floor(ray.ox / CELL_SIZE), cz = Math.floor(ray.oz / CELL_SIZE);
+  const stepX = ray.dx > 0 ? 1 : -1, stepZ = ray.dz > 0 ? 1 : -1;
+  const flatX = Math.abs(ray.dx) < 1e-12, flatZ = Math.abs(ray.dz) < 1e-12;
+  let nextX = flatX ? Infinity : ((cx + (stepX > 0 ? 1 : 0)) * CELL_SIZE - ray.ox) / ray.dx;
+  let nextZ = flatZ ? Infinity : ((cz + (stepZ > 0 ? 1 : 0)) * CELL_SIZE - ray.oz) / ray.dz;
+  const deltaX = flatX ? Infinity : CELL_SIZE / Math.abs(ray.dx), deltaZ = flatZ ? Infinity : CELL_SIZE / Math.abs(ray.dz);
+  visit(cx, cz);
+  for (;;) {
+    const enter = Math.min(nextX, nextZ);
+    // The slack covers rounding between this crossing distance and rayAabb's.
+    if (enter > maxT + 1e-6 || (best && (best as RayHit).t < enter - 1e-6)) break;
+    if (nextX === nextZ) {
+      // Through a corner: the two side cells hold boxes that only touch the corner.
+      visit(cx + stepX, cz); visit(cx, cz + stepZ);
+      cx += stepX; cz += stepZ; nextX += deltaX; nextZ += deltaZ;
+    } else if (nextX < nextZ) { cx += stepX; nextX += deltaX; }
+    else { cz += stepZ; nextZ += deltaZ; }
+    visit(cx, cz);
   }
   return best;
 }

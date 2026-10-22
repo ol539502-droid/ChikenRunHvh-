@@ -3,10 +3,11 @@ import type { AudioEngine } from '../game/Audio';
 import type { Input } from '../game/Input';
 import type { GameSocket } from '../net/Network';
 import type { Hud } from '../ui/Hud';
-import { defaultConfig, getPath, loadConfigs, loadCurrent, sanitizeConfig, saveConfigs, saveCurrent, setPath, type DevConfig, type NamedConfig } from './config';
+import { clearMigrationNotice, defaultConfig, getPath, loadConfigsMigrated, loadCurrentMigrated, migrationNotice, queueMigrationNotice, sanitizeConfig, saveConfigs, saveCurrent, setPath, type DevConfig, type NamedConfig } from './config';
 import { HVH_PANELS } from './panels';
 import { NativeMenu } from './skeet/NativeMenu';
 import { DevRuntime } from './DevRuntime';
+import type { HvhDebugFeed } from './HvhAuthDebug';
 import { showPasskeyPrompt } from './passkey';
 import './dev.css';
 
@@ -37,9 +38,13 @@ export interface DevContext {
  * the in-match runtime. The server decides what's allowed; this only asks.
  */
 export class Dev {
-  config: DevConfig = loadCurrent('skeet');
+  private readonly loadedCurrent = loadCurrentMigrated('skeet');
+  private readonly loadedConfigs = loadConfigsMigrated('skeet');
+  config: DevConfig = this.loadedCurrent.config;
   panelId: HvhPanelId = 'skeet';
-  configs: NamedConfig[] = loadConfigs('skeet');
+  configs: NamedConfig[] = this.loadedConfigs.configs;
+  /** v2 migration notice entries; persisted until shown (the next menu open, even after reloads). */
+  private migrationReset: string[] = queueMigrationNotice([...this.loadedCurrent.reset, ...this.loadedConfigs.reset]);
   status: DevStatus = { granted: false, allowedHere: false, profile: 'off', publicHvh: false, mods: { ...DEFAULT_MODS } };
   readonly runtime: DevRuntime;
   readonly input: Input;
@@ -179,6 +184,18 @@ export class Dev {
     this.syncTimer = window.setTimeout(() => this.syncNow(), MODS_SYNC_MS);
   }
 
+  /** Feed for the HvH v2 authoritative overlay: the server only sends it to authorized devs in private rooms. */
+  readonly hvhDebugFeed: HvhDebugFeed = {
+    subscribe: (handler) => {
+      this.socket.on('hvhDebug', handler);
+      return () => { this.socket.off('hvhDebug', handler); };
+    },
+    request: (on) => {
+      if (!this.socket.connected) return;
+      this.socket.timeout(REQUEST_TIMEOUT_MS).emitWithAck('devHvhDebug', on).catch(() => undefined);
+    },
+  };
+
   /** Sends the gameplay modifiers to the server; prediction uses whatever it confirms. */
   syncNow(): void {
     window.clearTimeout(this.syncTimer);
@@ -246,6 +263,16 @@ export class Dev {
     this.menu = new NativeMenu(this, () => this.closeMenu());
     this.ctx.onMenuChange();
     this.click();
+    this.showMigrationNotice();
+  }
+
+  /** One-time notice: after it shows, the migrated config is saved so it never repeats. */
+  private showMigrationNotice(): void {
+    if (!this.migrationReset.length) return;
+    this.notify(migrationNotice(this.migrationReset), 'bad', 12000);
+    this.migrationReset = [];
+    clearMigrationNotice();
+    saveCurrent(this.config, 'skeet');
   }
 
   closeMenu(): void {
@@ -273,7 +300,7 @@ export class Dev {
     if (this.config.settings.sounds) this.audio.play('click', undefined, 0.5);
   }
 
-  notify(text: string, kind: 'info' | 'good' | 'bad' = 'info'): void {
+  notify(text: string, kind: 'info' | 'good' | 'bad' = 'info', durationMs = 2800): void {
     if (!this.config.settings.notifications && kind !== 'bad') return;
     if (!this.toasts) {
       this.toasts = document.createElement('div');
@@ -284,7 +311,7 @@ export class Dev {
     el.className = `dev-toast ${kind}`;
     el.textContent = text;
     this.toasts.append(el);
-    window.setTimeout(() => el.remove(), 2800);
+    window.setTimeout(() => el.remove(), durationMs);
   }
 
   private onKey = (e: KeyboardEvent): void => {

@@ -5,6 +5,7 @@ import type { GameServer, GameSocket } from '../types';
 import { randomRoomCode, randomString } from '../util';
 import type { AntiCheatMode } from './AntiCheat';
 import { GameRoom, type PlayerProfile, type RoomHooks } from './GameRoom';
+import { hvhEngineFrom, type HvhEngine } from './HvhRoom';
 import { createRoom } from './modes';
 
 export const MAX_ROOMS = 200;
@@ -24,11 +25,14 @@ export class RoomManager {
   onActivity: ((userId: number) => void) | null = null;
 
   private readonly antiCheat: AntiCheatMode;
+  /** HvH rooms' engine, read once from HVH_ENGINE ('v2' selects v2; anything else is legacy). */
+  private readonly hvhEngine: HvhEngine;
 
-  constructor(io: GameServer, db: GameDatabase, options: { antiCheat?: AntiCheatMode } = {}) {
+  constructor(io: GameServer, db: GameDatabase, options: { antiCheat?: AntiCheatMode; env?: Readonly<Record<string, string | undefined>> } = {}) {
     this.io = io;
     this.db = db;
     this.antiCheat = options.antiCheat ?? 'enforce';
+    this.hvhEngine = hvhEngineFrom(options.env ?? process.env);
     this.hooks = {
       onMatchEnd: (room, results) => this.db.recordMatch(results, room.mode.id),
       onEmpty: (room) => this.close(room),
@@ -103,7 +107,7 @@ export class RoomManager {
     let code = randomRoomCode();
     while (this.byCode(code)) code = randomRoomCode();
     const name = isPrivate && hostName ? `${hostName}'s room` : `${MODES[mode].name} #${this.publicCounter++}`;
-    const room = createRoom(this.io, { id, code, name, mode, map, private: isPrivate, bots, fillBots, noBots, antiCheat: this.antiCheat }, this.hooks);
+    const room = createRoom(this.io, { id, code, name, mode, map, private: isPrivate, bots, fillBots, noBots, antiCheat: this.antiCheat, ...(mode === 'hvh' ? { hvhEngine: this.hvhEngine } : {}) }, this.hooks);
     this.rooms.set(id, room);
     return room;
   }

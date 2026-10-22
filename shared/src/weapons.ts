@@ -9,6 +9,7 @@ export const WEAPON_IDS = [
   'mpistol', 'revolver', 'burst', 'battle', 'autoshotgun', 'lmg', 'scout', 'crossbow', 'launcher', 'goldknife',
   'deagle', 'fiveseven', 'dualies', 'silenced', 'butterfly', 'karambit', 'm9', 'daggers',
   'ak47', 'm4a1',
+  'ssg08', 'scar20', 'deserteagle', 'r8',
 ] as const;
 export type WeaponId = typeof WEAPON_IDS[number];
 
@@ -66,6 +67,13 @@ export interface WeaponDef {
    * half-angle, radians) of the crosshair. No ammo; see meleeHit.
    */
   melee?: { arc: number };
+  /**
+   * The v2 HvH arsenal's CS:GO numbers (hvh/v2/arsenal.ts): armor penetration (CS:GO armor ratio
+   * / 2), damage × rangeModifier per 12.5 m (500 Source units) instead of the linear falloff, and
+   * for the R8 the hammer pull: the shot goes out `hammerMs` after the press while it is held.
+   * `scopedSpread` (radians) replaces `spread` and the legacy ×0.25 while scoped.
+   */
+  csgo?: { armorPen: number; rangeModifier: number; hammerMs?: number; scopedSpread?: number };
   /** Shop price in coins; 0 = everyone owns it. */
   price: number;
   sound: WeaponSound;
@@ -262,6 +270,40 @@ const DEFS: BaseDef[] = [
     range: 140, falloffStart: 50, minDamageScale: 0.75, zoom: 1.45, scope: false, recoil: 0.013,
     price: 2400, sound: 'rifle', model: { length: 0.76, color: 0x232427, accent: 0x3a3c40 },
   },
+  // ---- The v2 HvH arsenal (hvh/v2/arsenal.ts): HvH-only, free, kept out of every shop and list ----
+  // Final CS:GO items_game.txt (source URL in arsenal.ts). Spread = (spread + inaccuracy stand) / 1000,
+  // moveSpread = inaccuracy move / 1000, airSpread = inaccuracy jump / 1000 (radians), and scoped
+  // scopedSpread = (spread alt + inaccuracy stand alt) / 1000. Zoom = 90° / zoom fov.
+  // Move speed = max player speed / 250. Range = 8192 or 4096 units at 40 per metre. Reload times are
+  // the animation lengths (not in items_game). Models and sounds are the Scout's, AWP's, Deagle's, R8's.
+  {
+    id: 'ssg08', name: 'SSG 08', damage: 88, headshotMultiplier: 4, fireInterval: 1250, automatic: false,
+    magazine: 10, reloadTime: 3700, pellets: 1, spread: 0.03198, moveSpread: 0.12345, airSpread: 0.00572,
+    range: 204.8, falloffStart: 204.8, minDamageScale: 1, zoom: 2.25, zoom2: 6, scope: true, recoil: 0.05,
+    moveSpeed: 0.92, csgo: { armorPen: 0.85, rangeModifier: 0.98, scopedSpread: 0.00323 },
+    price: 0, sound: 'scout', model: { length: 0.95, color: 0x3d4f3a, accent: 0x1c1e21 },
+  },
+  {
+    id: 'scar20', name: 'SCAR-20', damage: 80, headshotMultiplier: 4, fireInterval: 250, automatic: true,
+    magazine: 20, reloadTime: 3100, pellets: 1, spread: 0.0261, moveSpread: 0.15048, airSpread: 0.15377,
+    range: 204.8, falloffStart: 204.8, minDamageScale: 1, zoom: 2.25, zoom2: 6, scope: true, recoil: 0.03,
+    moveSpeed: 0.86, csgo: { armorPen: 0.825, rangeModifier: 0.98, scopedSpread: 0.0023 },
+    price: 0, sound: 'sniper', model: { length: 0.95, color: 0x2f3b2f, accent: 0x111111 },
+  },
+  {
+    id: 'deserteagle', name: 'Desert Eagle', damage: 53, headshotMultiplier: 3.9, fireInterval: 225, automatic: false,
+    magazine: 7, reloadTime: 2200, pellets: 1, spread: 0.0062, moveSpread: 0.0481, airSpread: 0.04055,
+    range: 102.4, falloffStart: 102.4, minDamageScale: 1, zoom: 1.3, scope: false, recoil: 0.075,
+    moveSpeed: 0.92, csgo: { armorPen: 0.932, rangeModifier: 0.85 },
+    price: 0, sound: 'deagle', model: { length: 0.38, color: 0xb9bdc4, accent: 0x1b1c1f },
+  },
+  {
+    id: 'r8', name: 'R8 Revolver', damage: 86, headshotMultiplier: 4, fireInterval: 500, automatic: false,
+    magazine: 8, reloadTime: 2300, pellets: 1, spread: 0.00252, moveSpread: 0.0065, airSpread: 0.05323,
+    range: 102.4, falloffStart: 102.4, minDamageScale: 1, zoom: 1.25, scope: false, recoil: 0.06,
+    moveSpeed: 0.72, csgo: { armorPen: 0.932, rangeModifier: 0.94, hammerMs: 400 },
+    price: 0, sound: 'revolver', model: { length: 0.36, color: 0x8a8f99, accent: 0x6b4a2e },
+  },
 ];
 
 /**
@@ -300,6 +342,10 @@ const ARSENAL: Record<WeaponId, { kind: WeaponKind; category: WeaponCategory; na
   goldknife: { kind: 'melee', category: 'special' },
   pan: { kind: 'melee', category: 'special' },
   katana: { kind: 'melee', category: 'special' },
+  ssg08: { kind: 'sniper', category: 'cs' },
+  scar20: { kind: 'sniper', category: 'cs' },
+  deserteagle: { kind: 'pistol', category: 'cs' },
+  r8: { kind: 'pistol', category: 'cs' },
 };
 
 export const WEAPONS = Object.fromEntries(DEFS.map((w) => [w.id, { ...w, ...ARSENAL[w.id] }])) as Record<WeaponId, WeaponDef>;
@@ -399,8 +445,10 @@ export function weaponAt(index: number): WeaponId {
 export function spreadFor(w: WeaponDef, horizontalSpeed: number, airborne: boolean, aiming: boolean): number {
   // Slow walk, crouching, hops and knockback all use the same continuous curve.
   const speed = Number.isFinite(horizontalSpeed) ? clamp(horizontalSpeed / PLAYER.speed, 0, 3) : 0;
-  let s = w.spread + w.moveSpread * speed + (airborne ? w.airSpread : 0);
-  if (aiming) s *= w.scope ? 0.25 : 0.6;
+  // The CS:GO snipers have their own scoped inaccuracy in place of the ×0.25.
+  const scoped = aiming && w.scope ? w.csgo?.scopedSpread : undefined;
+  let s = (scoped ?? w.spread) + w.moveSpread * speed + (airborne ? w.airSpread : 0);
+  if (aiming && scoped === undefined) s *= w.scope ? 0.25 : 0.6;
   return s;
 }
 
@@ -430,6 +478,7 @@ export function pelletDirections(w: WeaponDef, aim: Vec3, spread: number, seed: 
 
 /** Damage of one bullet at a distance, before headshot/armor modifiers. */
 export function damageAt(w: WeaponDef, distance: number): number {
+  if (w.csgo) return w.damage * w.csgo.rangeModifier ** (distance / 12.5);
   if (distance <= w.falloffStart) return w.damage;
   const t = clamp((distance - w.falloffStart) / Math.max(1, w.range - w.falloffStart), 0, 1);
   return w.damage * lerp(1, w.minDamageScale, t);

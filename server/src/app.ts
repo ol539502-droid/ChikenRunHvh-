@@ -12,6 +12,7 @@ import { GameDatabase } from './db/Database';
 import { DevAccess } from './dev/DevAccess';
 import { runDevAction } from './dev/devActions';
 import type { GameRoom } from './rooms/GameRoom';
+import { HvhRoom } from './rooms/HvhRoom';
 import { RoomManager } from './rooms/RoomManager';
 import type { ServerPlayer } from './rooms/ServerPlayer';
 import { jsonErrors, originAllowed, securityHeaders } from './security';
@@ -332,6 +333,20 @@ function attachDevHandlers(socket: GameSocket, rooms: RoomManager, dev: DevAcces
     if (!room || !player || room.mode.id !== 'hvh') return ack({ ok: false, error: 'Join an HvH match first.' });
     if (panel !== 'manual' && (!allowed || profile !== 'hvh')) return ack({ ok: false, error: 'Unlock panel access or choose Manual play.' });
     ack(room.finishHvhSetup(player, panel) ? { ok: true } : { ok: false, error: 'This match has ended.' });
+  });
+
+  // Authoritative v2 overlay: passkey-granted developers only (not the public-HvH grant), private non-ranked rooms.
+  socket.on('devHvhDebug', (on, ack) => {
+    if (typeof ack !== 'function') return;
+    if (!limiter.take()) return ack({ ok: false, error: 'Slow down a little.' });
+    const { room, player, allowed } = context();
+    const userId = socket.data.userId;
+    const authorized = () => dev !== null && dev.isGranted(userId) && room !== undefined && room.info.private && dev.allowedIn(room);
+    if (!room || !player || !(room instanceof HvhRoom) || room.hvhEngine !== 'v2') return ack({ ok: false, error: 'Join a private HvH v2 room first.' });
+    if (on !== true) { room.setDebugViewer(player, null); return ack({ ok: true }); }
+    if (!allowed || !authorized()) return ack(denied);
+    room.setDebugViewer(player, authorized);
+    ack({ ok: true });
   });
 
   socket.on('devHvh', (raw, ack) => {

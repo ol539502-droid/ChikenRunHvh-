@@ -47,5 +47,7 @@ export const MIRAGE: MapDef = {
   ],
   nav: data.nav,
   navLinks: data.nav.map((p) => p.links.flatMap((id) => index.has(id) ? [index.get(id)!] : [])),
+  // Re-checking all 12,052 links at run time took ~14 s per room.
+  navLinksChecked: true,
   ladders,
 };

@@ -2,7 +2,8 @@ import { spreadFor, type WeaponDef } from '../weapons';
 const tuned = new Map<string, WeaponDef>();
 /** HvH keeps each weapon's magazine, reload and cadence, with an accuracy-focused FPS ruleset. */
 export function hvhWeapon(w: WeaponDef): WeaponDef {
-  if (w.projectile || w.melee) return w;
+  // The CS:GO arsenal is already balanced for HvH.
+  if (w.projectile || w.melee || w.csgo) return w;
   let result = tuned.get(w.id);
   if (!result) {
     result = { ...w, damage: w.damage * (w.pellets > 1 ? 1.2 : w.damage < 50 ? 1.6 : 1),

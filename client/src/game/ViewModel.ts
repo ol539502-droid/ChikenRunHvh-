@@ -16,6 +16,7 @@ const OFFSETS: Partial<Record<WeaponId, THREE.Vector3>> = {
   rocket: new THREE.Vector3(0.09, -0.02, -0.02),
   minigun: new THREE.Vector3(0.02, -0.05, 0.02),
   sniper: new THREE.Vector3(0, -0.01, 0.03),
+  scar20: new THREE.Vector3(0, -0.01, 0.03),
   knife: new THREE.Vector3(0.02, -0.02, 0.04),
   goldknife: new THREE.Vector3(0.02, -0.02, 0.04),
   butterfly: new THREE.Vector3(0.02, -0.02, 0.04),
@@ -25,6 +26,7 @@ const OFFSETS: Partial<Record<WeaponId, THREE.Vector3>> = {
   dualies: new THREE.Vector3(0.05, -0.01, 0.02),
   silenced: new THREE.Vector3(0, -0.005, 0.03),
   deagle: new THREE.Vector3(0, -0.01, 0.02),
+  deserteagle: new THREE.Vector3(0, -0.01, 0.02),
   lmg: new THREE.Vector3(0.03, -0.04, 0.03),
   launcher: new THREE.Vector3(0.03, -0.03, 0.02),
   crossbow: new THREE.Vector3(0.02, -0.03, 0.02),
@@ -194,7 +196,7 @@ export function inspectKind(id: WeaponId, gun: Pick<GunModel, 'offhand' | 'anima
 }
 
 /** Per-weapon size (big guns would cover the HUD). */
-const SIZES: Partial<Record<WeaponId, number>> = { rocket: 0.72, minigun: 0.85, sniper: 0.95, lmg: 0.82, launcher: 0.85, crossbow: 0.9, scout: 0.95, battle: 0.95 };
+const SIZES: Partial<Record<WeaponId, number>> = { rocket: 0.72, minigun: 0.85, sniper: 0.95, lmg: 0.82, launcher: 0.85, crossbow: 0.9, scout: 0.95, battle: 0.95, ssg08: 0.95, scar20: 0.95 };
 interface RecoilFeel {
   back: number;
   pitch: number;

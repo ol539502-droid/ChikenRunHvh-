@@ -1,5 +1,6 @@
 import { UPGRADES, UPGRADE_MAX_LEVEL, UPGRADE_PRICES, upgradeItemId } from './upgrades';
 import { DEFAULT_MELEE, WEAPONS, WEAPON_IDS, isMelee, type WeaponId } from './weapons';
+import { isHvhArsenal } from './hvh/v2/arsenal';
 
 /** `gun`: a gun skin (the finish on every gun you hold). */
 export type CosmeticSlot = 'skin' | 'hat' | 'beak' | 'shoes' | 'gun';
@@ -92,7 +93,7 @@ const UPGRADE_ITEMS: ItemDef[] = UPGRADES.flatMap((u) =>
   Array.from({ length: UPGRADE_MAX_LEVEL }, (_, i): ItemDef => ({ id: upgradeItemId(u.id, i + 1), slot: 'upgrade', key: `${u.id}:${i + 1}`, name: `${u.name} ${i + 1}`, price: UPGRADE_PRICES[i]! })),
 );
 
-const WEAPON_ITEMS: ItemDef[] = WEAPON_IDS.map((id) => ({
+const WEAPON_ITEMS: ItemDef[] = WEAPON_IDS.filter((id) => !isHvhArsenal(id)).map((id) => ({
   id: `weapon:${id}`,
   slot: 'weapon',
   key: id,
@@ -151,6 +152,7 @@ export function sanitizeLoadout(raw: unknown, owns: (itemId: string) => boolean,
   for (const entry of list) {
     if (typeof entry !== 'string' || !(entry in WEAPONS)) continue;
     const id = entry as WeaponId;
+    if (isHvhArsenal(id)) continue;
     if (WEAPONS[id].price !== 0 && !owns(itemId('weapon', id))) continue;
     if (isMelee(id)) melee ??= id;
     else if (guns.length < size && !guns.includes(id)) guns.push(id);

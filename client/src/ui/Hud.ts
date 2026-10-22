@@ -8,6 +8,7 @@ import { CombatFeedback } from '../game/CombatFeedback';
 import { CrosshairView } from './Crosshair';
 import { clear, formatTime, h, hex } from './dom';
 import { Radar } from './Radar';
+import { roundsObjective, scoreTarget, warmupBanner, type RoundsRule } from './hvh/roundsText';
 import { GRENADE_NAMES, grenadeCount, weaponHotkey, weaponIndexForKey, type HeldGrenade, type GrenadeStock } from '../game/weaponSlots';
 
 const KILLFEED_MS = 6000;
@@ -152,6 +153,8 @@ export class Hud {
   private readonly progress = h('div', { class: 'bomb-progress' }, this.progressFill, this.progressText);
 
   private mode: ModeDef = MODES.ffa;
+  /** A v2 HvH rounds match: its win condition (the mode's kill limit does not apply). */
+  private roundsRule: RoundsRule | null = null;
   /** Developer Misc switches. */
   showHitmarker = true;
   showDamageIndicators = true;
@@ -222,6 +225,7 @@ export class Hud {
 
   setRoom(room: RoomInfo): void {
     this.mode = MODES[room.mode];
+    this.roundsRule = null;
     this.radar.setMap(MAPS[room.map]);
     this.buyButton.hidden = !this.mode.bomb;
     this.rosterKey = '';
@@ -509,11 +513,12 @@ export class Hud {
     switch (r.phase) {
       case 'warmup':
         line = `Warmup · ${clock}`;
-        banner = left !== null && left < 5000 ? `Round 1 in ${Math.max(1, Math.ceil(left / 1000))}` : '';
+        banner = warmupBanner(r.round, left);
         break;
       case 'buy':
-        line = `Round ${r.round} · Buy time ${clock}`;
-        banner = `Buy time: press B · ${Math.max(1, Math.ceil((left ?? 0) / 1000))}`;
+        // v2 HvH rounds send their freeze time as the buy phase.
+        line = this.mode.bomb ? `Round ${r.round} · Buy time ${clock}` : `Round ${r.round} · Freeze time ${clock}`;
+        banner = `${this.mode.bomb ? 'Buy time: press B' : 'Freeze time'} · ${Math.max(1, Math.ceil((left ?? 0) / 1000))}`;
         break;
       case 'live':
         line = `Round ${r.round}`;
@@ -523,7 +528,7 @@ export class Hud {
         break;
       case 'over': {
         const won = r.winner === selfTeam;
-        banner = r.winner ? `${teamName(this.mode, r.winner)} win the round${won ? ' 🎉' : ''}` : '';
+        banner = r.winner ? `${teamName(this.mode, r.winner)} win the round${won ? ' 🎉' : ''}` : this.mode.bomb ? '' : 'Round drawn';
         line = `Round ${r.round} over`;
         break;
       }
@@ -584,12 +589,18 @@ export class Hud {
     this.progressFill.style.width = `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`;
   }
 
+  /** After setRoom: a v2 HvH room plays rounds, so the objective and team scores count rounds. */
+  setRoundsRule(rule: RoundsRule): void {
+    this.roundsRule = rule;
+    this.objective.textContent = roundsObjective(rule);
+  }
+
   setTeamScores(scores: [number, number], selfTeam: Team): void {
     if (!this.mode.teams) return;
     clear(this.teamScores);
     for (const team of [1, 2] as const) {
       this.teamScores.append(
-        h('div', { class: `team t${team}${team === selfTeam ? ' mine' : ''}` }, h('span', null, teamName(this.mode, team)), h('b', null, scores[team - 1]), h('small', null, `/ ${this.mode.scoreLimit}`)),
+        h('div', { class: `team t${team}${team === selfTeam ? ' mine' : ''}` }, h('span', null, teamName(this.mode, team)), h('b', null, scores[team - 1]), h('small', null, `/ ${scoreTarget(this.mode, this.roundsRule)}`)),
       );
     }
   }

@@ -4,6 +4,7 @@ import type { GameSession } from '../game/GameSession';
 import type { DevConfig } from './config';
 import { ResolverSystem, type ShotCandidate } from '@game/shared';
 import { HvhDebug } from './HvhDebug';
+import { HvhAuthDebug, type HvhDebugFeed } from './HvhAuthDebug';
 import { Chicken } from '../game/models/Chicken';
 import { nativeOn, nativeColor, nativeValue } from './skeet/visualValues';
 
@@ -35,14 +36,16 @@ export class DevDebug3D {
   private collision: THREE.LineSegments | null = null;
   private collisionBuiltAt = -Infinity;
   private readonly hvh: HvhDebug | null;
+  private readonly authoritative: HvhAuthDebug | null;
   private ghost: Chicken | null = null;
   private readonly ghostMaterial = new THREE.MeshBasicMaterial({transparent:true,opacity:.25,depthWrite:false});
 
-  constructor(session: GameSession, resolver?: ResolverSystem, focus: () => ShotCandidate | null = () => null) {
+  constructor(session: GameSession, resolver?: ResolverSystem, focus: () => ShotCandidate | null = () => null, feed?: HvhDebugFeed) {
     this.session = session;
     this.root.renderOrder = 999;
     session.camera.parent?.add(this.root);
     this.hvh = session.mode.id === 'hvh' && resolver ? new HvhDebug(session, resolver, focus) : null;
+    this.authoritative = session.mode.id === 'hvh' && feed ? new HvhAuthDebug(session.camera.parent, feed) : null;
   }
 
   update(config: DevConfig | null): void {
@@ -57,8 +60,12 @@ export class DevDebug3D {
       this.ghost.root.visible=true;this.ghost.root.position.copy(this.session.local.position);this.ghost.root.rotation.y=this.session.local.server.fakeYaw??this.session.local.server.yaw;
       this.ghost.setAim(this.session.local.server.fakePitch??this.session.local.server.pitch);this.ghost.setCrouch(this.session.local.state.crouching);
     } else if(this.ghost)this.ghost.root.visible=false;
-    this.hvh?.update(hitboxes);
-    this.updatePlayers(hitboxes && !this.hvh, glow, config);
+    // v2 rooms: the server's authoritative feed replaces the client-side estimate matrices; the
+    // regular pass below then draws the presented pose.
+    const v2 = this.session.local.hvhV2;
+    this.hvh?.update(hitboxes && !v2);
+    this.authoritative?.update(hitboxes && v2, (pid) => this.session.remotes.players.get(pid)?.alive === true);
+    this.updatePlayers(hitboxes && (!this.hvh || v2), glow, config);
     this.updateCollision(!!world?.collision);
   }
 
@@ -156,6 +163,7 @@ export class DevDebug3D {
   dispose(): void {
     this.ghost?.dispose();this.ghostMaterial.dispose();
     this.hvh?.dispose();
+    this.authoritative?.dispose();
     this.root.removeFromParent();
     this.collision?.geometry.dispose();
     this.hitboxMaterial.dispose();

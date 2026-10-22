@@ -1,5 +1,6 @@
 import { clamp, wrapAngle } from './math';
 import { CHICKEN_POSE } from './chickenPose';
+import { V2_STANCES, uniformAntiAim, type AntiAimConfig, type DefensiveAA, type StanceAA } from './hvh/v2/pose';
 
 export const HVH_PANEL_IDS = ['skeet', 'manual'] as const;
 export type HvhPanelId = typeof HVH_PANEL_IDS[number];
@@ -66,11 +67,52 @@ export function sanitizeSkeetAntiAim(raw: unknown): SkeetAntiAim {
   return out;
 }
 
+/** The loadout part of the v2 AntiAimConfig; `inverted` comes from each command's invert key. */
+export type HvhStanceAntiAim = Pick<AntiAimConfig, 'stances' | 'defensive'>;
+export const STANCE_AA_RANGES = [['yawOffsetDeg', -180, 180], ['jitterDeg', 0, 45], ['desyncDeg', 0, 58]] as const;
+export const AA_BASES: readonly StanceAA['base'][] = ['backward', 'left', 'right', 'spin'];
+export const DEFENSIVE_PITCHES: readonly DefensiveAA['pitch'][] = ['down', 'up', 'zero', 'random', 'jitter'];
+export const DEFENSIVE_YAWS: readonly DefensiveAA['yaw'][] = ['off', 'flick', 'spin', 'random', 'sideways'];
+/** Every stance from the single legacy base, jitter and desync (no yaw offset), defensive off. */
+export function stanceAntiAimFrom(a: HvhLoadout['antiAim']): HvhStanceAntiAim {
+  const { stances, defensive } = uniformAntiAim({ base: a.mode, yawOffsetDeg: 0, jitterDeg: a.jitter, desyncDeg: a.desync });
+  return { stances, defensive };
+}
+/** `raw` over `fallback`, field by field: wrong types and unknown choices keep the fallback, numbers clamp. */
+export function sanitizeStanceAntiAim(raw: unknown, fallback: HvhStanceAntiAim): HvhStanceAntiAim {
+  const out = { stances: { ...fallback.stances }, defensive: { ...fallback.defensive } };
+  for (const s of V2_STANCES) {
+    out.stances[s] = { ...out.stances[s] };
+    out.defensive[s] = { ...out.defensive[s] };
+  }
+  if (!raw || typeof raw !== 'object') return out;
+  const r = raw as Record<string, unknown>;
+  const part = (key: 'stances' | 'defensive', stance: string) => {
+    const group = r[key];
+    const v = group && typeof group === 'object' ? (group as Record<string, unknown>)[stance] : undefined;
+    return v && typeof v === 'object' ? v as Record<string, unknown> : {};
+  };
+  for (const stance of V2_STANCES) {
+    const s = part('stances', stance), st = out.stances[stance];
+    if (AA_BASES.includes(s.base as never)) st.base = s.base as StanceAA['base'];
+    for (const [key, min, max] of STANCE_AA_RANGES) {
+      if (typeof s[key] === 'number' && Number.isFinite(s[key])) st[key] = clamp(s[key], min, max);
+    }
+    const d = part('defensive', stance), def = out.defensive[stance];
+    for (const key of ['enabled', 'inAir', 'onPeek', 'always'] as const) if (typeof d[key] === 'boolean') def[key] = d[key];
+    if (DEFENSIVE_PITCHES.includes(d.pitch as never)) def.pitch = d.pitch as DefensiveAA['pitch'];
+    if (DEFENSIVE_YAWS.includes(d.yaw as never)) def.yaw = d.yaw as DefensiveAA['yaw'];
+  }
+  return out;
+}
+
 export interface HvhLoadout {
   core?: HvhCoreSettings;
   antiAim: { enabled: boolean; mode: 'backward' | 'left' | 'right' | 'spin'; desync: number; jitter: number; jitterInterval?: number; spinSpeed: number; pitch?: SkeetAntiAim['visualPitch'] };
   exploit: 'off' | 'doubleTap' | 'hideShots';
   skeet?: SkeetAntiAim;
+  /** v2 rooms: the per-stance anti-aim and defensive patterns. Absent: every stance is antiAim's single base, jitter and desync. */
+  v2AntiAim?: HvhStanceAntiAim;
 }
 export interface HvhCoreSettings {
   era: 'legacy' | 'desync' | 'tickbase' | 'defensive';
@@ -97,7 +139,8 @@ export function sanitizeHvhLoadout(raw: unknown): HvhLoadout {
     if (['legacy', 'desync', 'tickbase', 'defensive'].includes(String(core.era))) c.era = core.era as HvhCoreSettings['era'];
     if (['static', 'velocity', 'random', 'adaptive', 'peek'].includes(String(core.fakeLagMode))) c.fakeLagMode = core.fakeLagMode as HvhCoreSettings['fakeLagMode'];
     for (const key of ['fakeDuck', 'antiBruteforce', 'defensive', 'fakeLagBreakOnShot'] as const) if (typeof core[key] === 'boolean') c[key] = core[key];
-    for (const [key, max] of [['fakeLag', 12], ['latencyMs', 150], ['jitterMs', 50], ['packetLoss', 0.1]] as const)
+    // fakeLag allows the v2 maxChoke (14); legacy fakeLagTicks still clamps choke to 12.
+    for (const [key, max] of [['fakeLag', 14], ['latencyMs', 150], ['jitterMs', 50], ['packetLoss', 0.1]] as const)
       if (typeof core[key] === 'number' && Number.isFinite(core[key])) c[key] = clamp(core[key], 0, max);
     c.fakeLag = Math.round(c.fakeLag);
   }
@@ -113,6 +156,7 @@ export function sanitizeHvhLoadout(raw: unknown): HvhLoadout {
       if (typeof v === 'number' && Number.isFinite(v)) out.antiAim[key] = clamp(v, min, max);
     }
   }
+  if (r.v2AntiAim && typeof r.v2AntiAim === 'object') out.v2AntiAim = sanitizeStanceAntiAim(r.v2AntiAim, stanceAntiAimFrom(out.antiAim));
   return out;
 }
 /** A physical head pose. Shot direction and the player's camera remain independent. */

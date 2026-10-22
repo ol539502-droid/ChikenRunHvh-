@@ -127,7 +127,7 @@ export interface ZombieHost {
 const NAV_GRAPHS = new Map<MapDef['id'], NavGraph | null>();
 
 function navGraph(map: MapDef): NavGraph | null {
-  if (!NAV_GRAPHS.has(map.id)) NAV_GRAPHS.set(map.id, map.nav ? buildNavGraph(map.nav, createCollisionWorld(map), map.navLinks) : null);
+  if (!NAV_GRAPHS.has(map.id)) NAV_GRAPHS.set(map.id, map.nav ? buildNavGraph(map.nav, createCollisionWorld(map), map.navLinks, map.navLinksChecked) : null);
   return NAV_GRAPHS.get(map.id)!;
 }
 

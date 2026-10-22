@@ -41,6 +41,7 @@ export const PLAYER = {
   startFlashes: 1,
   maxFlashes: 2,
 } as const;
+export const PLAYER_HULL_WIDTH = PLAYER.radius * 2;
 
 /** Standard CS-style takeoff ceiling; speed comes from air acceleration, never a hop bonus. */
 export const HOP = {

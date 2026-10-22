@@ -102,13 +102,13 @@ const SILENCE = 0.01;
 /** Which reload sound a gun makes (a magazine swap, shells one by one, or a bolt gun). */
 export function reloadSoundFor(id: WeaponId): SoundName {
   if (id === 'shotgun' || id === 'autoshotgun') return 'reloadShell';
-  if (id === 'sniper' || id === 'scout') return 'reloadBolt';
+  if (id === 'sniper' || id === 'scout' || id === 'ssg08') return 'reloadBolt';
   return WEAPONS[id].projectile ? 'reload' : 'reloadMag';
 }
 
 /** The dry click: a heavier one for big guns. */
 export function emptySoundFor(id: WeaponId): SoundName {
-  return id === 'sniper' || id === 'scout' || id === 'shotgun' || id === 'autoshotgun' || id === 'revolver' || id === 'deagle' ? 'emptyHeavy' : 'empty';
+  return WEAPONS[id].csgo || id === 'sniper' || id === 'scout' || id === 'shotgun' || id === 'autoshotgun' || id === 'revolver' || id === 'deagle' ? 'emptyHeavy' : 'empty';
 }
 
 /**

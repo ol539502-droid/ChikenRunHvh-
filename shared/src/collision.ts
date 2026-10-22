@@ -7,7 +7,8 @@ export interface Aabb {
   maxZ: number;
 }
 
-const CELL_SIZE = 4;
+/** Width of the broad-phase grid cells (raycastWorld walks them). */
+export const CELL_SIZE = 4;
 const CELL_OFFSET = 1024;
 
 function cellKey(cx: number, cz: number): number {
@@ -28,6 +29,8 @@ export class CollisionWorld {
   private readonly scratchIds: number[] = [];
   /** Player clips: boxes that stop chickens but not bullets or sight (Mirage's invisible gap fillers). */
   readonly seeThrough = new Set<number>();
+  /** Bumped by every add and remove, so a cached trace can tell the world changed. */
+  revision = 0;
   /** Climbable ladder volumes (Mirage). */
   ladders: readonly Aabb[] = [];
 
@@ -54,6 +57,7 @@ export class CollisionWorld {
 
   add(id: number, box: Aabb): void {
     if (this.boxes.has(id)) this.remove(id);
+    this.revision++;
     this.boxes.set(id, box);
     this.forEachCell(box.minX, box.minZ, box.maxX, box.maxZ, (key) => {
       const list = this.cells.get(key);
@@ -69,6 +73,7 @@ export class CollisionWorld {
     const box = this.boxes.get(id);
     if (!box) return false;
     this.boxes.delete(id);
+    this.revision++;
     this.forEachCell(box.minX, box.minZ, box.maxX, box.maxZ, (key) => {
       const list = this.cells.get(key);
       if (!list) return;
@@ -96,6 +101,11 @@ export class CollisionWorld {
       out.push(this.boxes.get(id)!);
     }
     return out;
+  }
+
+  /** The ids registered in grid cell (cx, cz) (cells are CELL_SIZE wide), in no particular order. */
+  cellIds(cx: number, cz: number): readonly number[] | undefined {
+    return this.cells.get(cellKey(cx, cz));
   }
 
   /** Ids of the boxes whose grid cells touch the XZ rectangle, ascending (the same order as entries()). */

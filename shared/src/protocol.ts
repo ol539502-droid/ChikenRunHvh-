@@ -4,6 +4,11 @@ import type { FriendsState, PartyInvite, PartyState, SocialResult } from './soci
 import type { DevAction, DevMods, DevResult, DevStatus, JumpscareStyle } from './dev';
 import type { UpgradeLevels } from './upgrades';
 import type { HvhLoadout } from './hvh';
+import type { EraTable } from './hvh/v2/era';
+import type { PoseState, Side } from './hvh/v2/pose';
+import type { LagRecord } from './hvh/v2/records';
+import type { ShotVerdict } from './hvh/v2/shot';
+import type { CommandIntent, TickbaseState } from './hvh/v2/tickbase';
 import type { Appearance } from './items';
 import type { MapId, Team } from './maps/types';
 import { round } from './math';
@@ -381,6 +386,58 @@ export interface JoinRoomRequest {
 // Combat and gameplay events
 // ---------------------------------------------------------------------------
 
+/**
+ * The `input` message. Legacy fields are an InputFrame; the HvH v2 engine also reads `intent`
+ * (what this command asks the tickbase to do) and `clientTick` (the server tick the client was
+ * viewing when it built the command, used as the shot's lag-compensation view tick). Both are
+ * optional, so legacy clients and every non-HvH room are unaffected: their parser drops them.
+ */
+export interface InputCommand extends InputFrame {
+  intent?: CommandIntent;
+  clientTick?: number;
+  /**
+   * HvH v2 (R56): the `t` of the snapshot the client predicted this command's enemy sight from.
+   * The server traces the sight against what that snapshot showed (within the unlag window).
+   */
+  sightT?: number;
+}
+
+/**
+ * HvH v2, sent to the owning player only, once per server tick in which their commands ran.
+ * `lastAckSeq` is the seq of the last command the server executed (the same value as the
+ * snapshot's `ack`), so client prediction can drop acknowledged commands and replay the rest.
+ */
+export interface HvhStateEvent {
+  tick: number;
+  /** The owner's tickbase after lastAckSeq: counter, stored `charge` (0..chargeTicks), `choked` and `armed`. */
+  tickbase: TickbaseState;
+  era: string;
+  lastAckSeq: number;
+  /**
+   * The owner's commands still waiting in the server queue after this tick. The server runs one per
+   * tick on average, so a backlog never drains by itself; the client's CommandClock uses this to
+   * send a few less until it does (clock correction).
+   */
+  queued: number;
+}
+
+export function hvhStateEvent(tickbase: TickbaseState, era: EraTable, lastAckSeq: number, tick: number, queued = 0): HvhStateEvent {
+  return {
+    tick,
+    tickbase: { ...tickbase },
+    era: era.id,
+    lastAckSeq,
+    queued,
+  };
+}
+
+/**
+ * HvH v2: hitscan `fire` messages a room holds while they wait for their command (overflow drops
+ * the oldest). Each one is attached to the first command executed with seq >= its `command`, so
+ * client prediction (PredictedTickbase.shot) keeps the same bounded queue.
+ */
+export const MAX_PENDING_FIRES = 4;
+
 export interface FireRequest {
   command?: number;
   intent?: import('./hvh/rage').ShotIntent;
@@ -573,7 +630,7 @@ export interface ClientToServerEvents {
   /** Zombie Apocalypse: play again after game over. */
   zombieRestart: () => void;
 
-  input: (frame: InputFrame) => void;
+  input: (frame: InputCommand) => void;
   fire: (req: FireRequest) => void;
   reload: () => void;
   switchWeapon: (slot: number) => void;
@@ -605,6 +662,8 @@ export interface ClientToServerEvents {
   devMods: (mods: Partial<DevMods>, ack: (status: DevStatus) => void) => void;
   hvhReady: (panel: import('./hvh').HvhPanelId, ack: (result: DevResult) => void) => void;
   devHvh: (loadout: HvhLoadout, ack: (status: DevStatus) => void) => void;
+  /** HvH v2 authoritative debug overlay on/off (developer-authorized, private rooms only). */
+  devHvhDebug: (on: boolean, ack: (res: DevResult) => void) => void;
   devAction: (action: DevAction, ack: (res: DevResult) => void) => void;
   /** Round-trip probe; the server just calls `ack` with its clock. */
   latency: (ack: (serverTime: number) => void) => void;
@@ -625,6 +684,14 @@ export interface ClientToServerEvents {
   partyKick: (userId: number, ack: (res: SocialResult) => void) => void;
 }
 
+/** Dev-only: the server's real pose, lag records and this viewer's resolver guess for one player. */
+export interface HvhDebugEvent {
+  playerId: number;
+  realPose: PoseState;
+  records: LagRecord[];
+  resolver: { side: Side; confidence: number };
+}
+
 export interface ServerToClientEvents {
   snapshot: (snapshot: WorldSnapshot) => void;
   playerJoined: (player: PlayerInfo) => void;
@@ -632,6 +699,12 @@ export interface ServerToClientEvents {
   playerUpdated: (player: PlayerInfo) => void;
 
   shot: (e: ShotEvent) => void;
+  /** HvH v2: one explained outcome per bullet (to the shooter, the target and spectators). */
+  shotVerdict: (v: ShotVerdict) => void;
+  /** HvH v2: the owner's tickbase and command acknowledgement. */
+  hvhState: (s: HvhStateEvent) => void;
+  /** HvH v2 dev overlay: the server's truth about one other player (one message per player per tick). */
+  hvhDebug: (e: HvhDebugEvent) => void;
   damage: (e: DamageEvent) => void;
   kill: (e: KillEvent) => void;
   spawn: (e: SpawnEvent) => void;
